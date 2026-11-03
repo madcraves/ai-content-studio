@@ -1,56 +1,56 @@
-name: Build AI Content Studio Portable (Windows x64)
+name: Build AI Content Studio
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
 
 jobs:
-  build-windows-portable:
-    name: Build Windows x64 Portable
+  build:
+    name: Build Portable Windows App
     runs-on: windows-latest
 
     steps:
-      - name: Check out source
-        uses: actions/checkout@v5
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-      - name: Set up Node.js on GitHub runner only
-        uses: actions/setup-node@v7
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: 22
           architecture: x64
-          package-manager-cache: false
 
-      - name: Verify project file structure
-        shell: pwsh
+      - name: Show Node and npm Versions
         run: |
-          $required = @(
-            'package.json',
-            'electron/main.ts',
-            'electron/preload.ts',
-            'electron/tsconfig.json',
-            'electron/services/database.ts',
-            'electron/services/generation.ts',
-            'electron/services/wordpress.ts',
-            'electron/services/scheduler.ts'
-          )
-          foreach ($file in $required) {
-            if (-not (Test-Path $file)) {
-              Write-Error "Missing required project file: $file"
-            }
-          }
+          node --version
+          npm --version
 
-      - name: Install project dependencies
+      - name: Install Project Dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Build portable Windows x64 EXE
-        run: npm run dist:portable
+      - name: Rebuild Native Dependencies
+        run: npx electron-rebuild -f -w better-sqlite3
 
-      - name: Upload portable EXE
-        uses: actions/upload-artifact@v7
+      - name: Build React Application
+        run: npm run build
+
+      - name: Build Electron TypeScript
+        run: npx tsc -p electron/tsconfig.json
+
+      - name: Create Portable Windows EXE
+        run: npm run make:portable
+
+      - name: Upload Portable Application
+        uses: actions/upload-artifact@v4
         with:
           name: AI-Content-Studio-Portable-Windows-x64
-          path: release/portable/*.exe
+          path: |
+            release/**/*.exe
+            release/**/*.7z
+            release/**/*.zip
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 14
