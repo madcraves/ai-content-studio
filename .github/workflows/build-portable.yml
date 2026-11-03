@@ -15,35 +15,41 @@ jobs:
     runs-on: windows-latest
 
     steps:
+      # Checkout repository
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      # Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           architecture: x64
+          cache: npm
 
+      # Display versions
       - name: Show Node and npm Versions
         run: |
           node --version
           npm --version
 
+      # Install dependencies
       - name: Install Project Dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
+      # Rebuild better-sqlite3 for Electron
       - name: Rebuild Native Dependencies
         run: npx electron-rebuild -f -w better-sqlite3
 
-      - name: Build React Application
+      # Build React and Electron TypeScript
+      - name: Build Application
         run: npm run build
 
-      - name: Build Electron TypeScript
-        run: npx tsc -p electron/tsconfig.json
-
+      # Generate portable Windows application
       - name: Create Portable Windows EXE
-        run: npm run make:portable
+        run: npm run dist:portable
 
+      # Upload generated files
       - name: Upload Portable Application
         uses: actions/upload-artifact@v4
         with:
