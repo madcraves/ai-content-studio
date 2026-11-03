@@ -1,476 +1,11 @@
 import React, { useEffect, useState } from "react";
-
-declare global {
-  interface Window {
-    studio: {
-      dashboard: () => Promise<any>;
-      listSites: () => Promise<any[]>;
-      listProviders: () => Promise<any[]>;
-      listArticles: () => Promise<any[]>;
-    };
-  }
-}
-
-const css = `
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
-
-* { box-sizing: border-box; }
-
-body {
-  margin: 0;
-  background: #f5f6fa;
-  color: #202238;
-  font-family: 'DM Sans', sans-serif;
-}
-
-button { font: inherit; cursor: pointer; }
-
-.app {
-  min-height: 100vh;
-  display: flex;
-  background: #f6f7fb;
-}
-
-.sidebar {
-  width: 252px;
-  min-width: 252px;
-  min-height: 100vh;
-  background: #17172b;
-  color: #fff;
-  padding: 27px 17px 20px;
-  display: flex;
-  flex-direction: column;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0 9px 34px;
-}
-
-.brand-icon {
-  width: 43px;
-  height: 43px;
-  border-radius: 13px;
-  display: grid;
-  place-items: center;
-  font-family: 'Space Grotesk';
-  font-size: 16px;
-  font-weight: 700;
-  background: linear-gradient(135deg,#8b5cf6,#4f46e5);
-  box-shadow: 0 6px 22px #7455e65c;
-}
-
-.brand h2 {
-  font-family: 'Space Grotesk';
-  font-size: 16px;
-  margin: 0 0 3px;
-  letter-spacing: -.4px;
-}
-
-.brand small { color: #85869f; font-size: 10px; }
-
-.menu-label {
-  color: #777993;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 1.5px;
-  padding: 10px 12px;
-}
-
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  padding: 12px 13px;
-  margin: 3px 0;
-  border-radius: 9px;
-  color: #a4a5bb;
-  font-size: 12px;
-  font-weight: 500;
-  transition: .2s;
-}
-
-.nav-item:hover { background: #25253e; color: white; }
-
-.nav-item.active {
-  background: linear-gradient(100deg,#684de0,#5140b8);
-  color: white;
-  box-shadow: 0 6px 18px #604bd34a;
-}
-
-.nav-icon {
-  width: 18px;
-  text-align: center;
-  font-size: 16px;
-}
-
-.sidebar-bottom { margin-top: auto; }
-
-.plan-card {
-  padding: 16px;
-  border: 1px solid #34344e;
-  border-radius: 12px;
-  background: #202039;
-  margin: 15px 3px;
-}
-
-.plan-card small { color: #999ab4; font-size: 10px; }
-.plan-card strong { display: block; font-size: 12px; margin: 6px 0 12px; }
-
-.plan-line {
-  height: 5px;
-  border-radius: 10px;
-  background: #393952;
-  overflow: hidden;
-}
-
-.plan-line span {
-  display: block;
-  width: 65%;
-  height: 100%;
-  background: linear-gradient(90deg,#9b75ff,#5d80ff);
-  border-radius: 10px;
-}
-
-.profile {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 15px 7px 0;
-  border-top: 1px solid #33334a;
-}
-
-.avatar {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: linear-gradient(135deg,#d5b7ff,#8270ed);
-  color: #292044;
-  font-weight: 800;
-  font-size: 12px;
-}
-
-.profile strong { display: block; font-size: 11px; }
-.profile small { color: #85869f; font-size: 10px; }
-
-.main {
-  flex: 1;
-  min-width: 0;
-  padding: 30px 38px;
-  max-width: 1700px;
-  margin: auto;
-}
-
-.topbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 20px;
-  margin-bottom: 27px;
-}
-
-.topbar h1 {
-  font-family: 'Space Grotesk';
-  font-size: 26px;
-  letter-spacing: -.8px;
-  margin: 0 0 5px;
-}
-
-.topbar p { color: #9294a7; font-size: 12px; margin: 0; }
-
-.top-actions { display: flex; align-items: center; gap: 13px; }
-
-.system-status {
-  color: #368b6a;
-  background: #e8f7ef;
-  border: 1px solid #d4efdf;
-  padding: 9px 13px;
-  border-radius: 30px;
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.status-dot {
-  width: 7px;
-  height: 7px;
-  display: inline-block;
-  background: #31b879;
-  border-radius: 50%;
-  margin-right: 6px;
-}
-
-.refresh {
-  background: white;
-  border: 1px solid #e8e9f0;
-  border-radius: 9px;
-  padding: 10px 14px;
-  color: #51536a;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.hero {
-  position: relative;
-  overflow: hidden;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  min-height: 190px;
-  padding: 30px 35px;
-  border-radius: 17px;
-  color: white;
-  background: linear-gradient(110deg,#5541bd 0%,#6651d7 48%,#4473db 100%);
-  box-shadow: 0 12px 30px #6556c52b;
-}
-
-.hero:after {
-  content: "";
-  position: absolute;
-  width: 320px;
-  height: 320px;
-  border: 1px solid #ffffff22;
-  border-radius: 50%;
-  right: 8%;
-  top: -150px;
-  box-shadow: 0 0 0 35px #ffffff09, 0 0 0 75px #ffffff08;
-}
-
-.hero-content { position: relative; z-index: 1; max-width: 600px; }
-
-.hero-tag {
-  display: inline-block;
-  padding: 6px 10px;
-  border: 1px solid #ffffff42;
-  border-radius: 30px;
-  background: #ffffff15;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 1.4px;
-}
-
-.hero h2 {
-  font-family: 'Space Grotesk';
-  font-size: 25px;
-  letter-spacing: -.7px;
-  margin: 13px 0 8px;
-}
-
-.hero p { color: #e2ddff; font-size: 12px; line-height: 1.7; margin: 0; }
-
-.hero-art {
-  position: relative;
-  z-index: 1;
-  width: 125px;
-  height: 125px;
-  display: grid;
-  place-items: center;
-  border-radius: 30px;
-  background: #ffffff18;
-  border: 1px solid #ffffff40;
-  font-size: 55px;
-  transform: rotate(8deg);
-  margin-right: 30px;
-}
-
-.section-title {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin: 29px 0 15px;
-}
-
-.section-title h3 { margin: 0; font-size: 14px; font-weight: 700; }
-.section-title span { color: #9698aa; font-size: 10px; }
-
-.stats {
-  display: grid;
-  grid-template-columns: repeat(4,minmax(0,1fr));
-  gap: 15px;
-  margin-top: 21px;
-}
-
-.stat-card {
-  padding: 19px;
-  background: white;
-  border: 1px solid #ececf3;
-  border-radius: 13px;
-  box-shadow: 0 3px 12px #25254a06;
-}
-
-.stat-top { display: flex; justify-content: space-between; align-items: center; }
-.stat-card label { color: #9294a7; font-size: 10px; font-weight: 600; }
-
-.stat-icon {
-  width: 31px;
-  height: 31px;
-  display: grid;
-  place-items: center;
-  border-radius: 9px;
-  background: #f0edff;
-  color: #7558db;
-  font-size: 15px;
-}
-
-.stat-card strong {
-  display: block;
-  margin-top: 13px;
-  font-family: 'Space Grotesk';
-  font-size: 27px;
-  letter-spacing: -.8px;
-}
-
-.stat-note { color: #a0a2b1; font-size: 9px; margin-top: 4px; }
-
-.two-columns {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-top: 17px;
-}
-
-.panel {
-  background: white;
-  border: 1px solid #ececf3;
-  border-radius: 13px;
-  padding: 20px;
-  min-width: 0;
-  box-shadow: 0 3px 12px #25254a05;
-}
-
-.panel-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.panel-heading h3 { margin: 0; font-size: 12px; }
-.panel-heading span { color: #9698aa; font-size: 10px; }
-
-.list-row {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  padding: 12px 0;
-  border-top: 1px solid #f0f0f5;
-}
-
-.list-icon {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border-radius: 9px;
-  background: #f2efff;
-  color: #7256d6;
-  font-weight: 700;
-  font-size: 12px;
-}
-
-.list-info { flex: 1; min-width: 0; }
-.list-info strong { display: block; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.list-info small { display: block; color: #a0a1b0; font-size: 9px; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; }
-
-.connected {
-  color: #31966d;
-  background: #eaf8f0;
-  padding: 5px 8px;
-  border-radius: 20px;
-  font-size: 9px;
-  white-space: nowrap;
-}
-
-.empty {
-  text-align: center;
-  padding: 24px 10px;
-  color: #9b9cad;
-}
-
-.empty-icon { font-size: 25px; }
-.empty h4 { color: #4b4d63; font-size: 12px; margin: 10px 0 5px; }
-.empty p { font-size: 10px; margin: 0; }
-
-.recent { margin-top: 17px; }
-
-.article-header {
-  display: grid;
-  grid-template-columns: 1fr 110px 90px;
-  gap: 12px;
-  padding: 10px 0;
-  color: #a0a1b0;
-  font-size: 9px;
-  font-weight: 700;
-  border-bottom: 1px solid #eeeeF4;
-}
-
-.article-row {
-  display: grid;
-  grid-template-columns: 1fr 110px 90px;
-  gap: 12px;
-  padding: 13px 0;
-  align-items: center;
-  border-bottom: 1px solid #f1f1f5;
-  font-size: 10px;
-}
-
-.article-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.article-row small { color: #999bad; }
-.article-status {
-  color: #9367d7;
-  background: #f3edff;
-  padding: 5px 8px;
-  border-radius: 20px;
-  text-align: center;
-  font-size: 9px;
-}
-
-footer {
-  padding: 23px 0 5px;
-  text-align: center;
-  color: #a5a6b4;
-  font-size: 9px;
-}
-
-@media(max-width:1050px) {
-  .sidebar { width: 215px; min-width: 215px; }
-  .main { padding: 25px 22px; }
-  .stats { grid-template-columns: repeat(2,minmax(0,1fr)); }
-}
-
-@media(max-width:760px) {
-  .sidebar { width: 65px; min-width: 65px; padding: 20px 8px; }
-  .brand { padding: 0 2px 30px; }
-  .brand > div:last-child, .menu-label, .nav-item span:last-child,
-  .sidebar-bottom { display: none; }
-  .nav-item { justify-content: center; padding: 13px 5px; }
-  .nav-icon { width: auto; }
-  .main { padding: 20px 14px; }
-  .two-columns { grid-template-columns: 1fr; }
-  .hero { padding: 23px; }
-  .hero-art { display: none; }
-  .topbar { align-items: flex-start; }
-  .system-status { display: none; }
-}
-
-@media(max-width:480px) {
-  .stats { grid-template-columns: 1fr 1fr; gap: 9px; }
-  .stat-card { padding: 13px; }
-  .topbar h1 { font-size: 21px; }
-  .hero h2 { font-size: 20px; }
-  .article-header, .article-row { grid-template-columns: 1fr 75px; }
-  .article-header span:last-child, .article-row .article-date { display: none; }
-}
-`;
+import "./styles.css";
 
 export default function App() {
-  const [dashboard, setDashboard] = useState<any>({});
-  const [sites, setSites] = useState<any[]>([]);
-  const [providers, setProviders] = useState<any[]>([]);
-  const [articles, setArticles] = useState<any[]>([]);
+  const [dashboard, setDashboard] = useState<DashboardStats>({});
+  const [sites, setSites] = useState<Website[]>([]);
+  const [providers, setProviders] = useState<AIProvider[]>([]);
+  const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -492,7 +27,7 @@ export default function App() {
       setProviders(providerList || []);
       setArticles(articleList || []);
     } catch (err) {
-      console.error(err);
+      console.error("Dashboard error:", err);
       setError("Unable to load dashboard data. Please restart the application.");
     } finally {
       setLoading(false);
@@ -500,192 +35,348 @@ export default function App() {
   }
 
   useEffect(() => {
-    loadData();
+    void loadData();
   }, []);
 
   const stats = [
-    { label: "Connected Websites", value: sites.length, icon: "🌐", note: "WordPress workspaces" },
-    { label: "AI Providers", value: providers.length, icon: "✦", note: "Configured AI engines" },
-    { label: "Articles Created", value: dashboard.totalArticles ?? articles.length, icon: "▤", note: "Saved in your library" },
-    { label: "Scheduled Tasks", value: dashboard.scheduled ?? 0, icon: "◷", note: "Upcoming content jobs" }
+    {
+      label: "Connected Websites",
+      value: sites.length,
+      icon: "🌐",
+      note: "WordPress workspaces"
+    },
+    {
+      label: "AI Providers",
+      value: providers.length,
+      icon: "✦",
+      note: "Configured AI engines"
+    },
+    {
+      label: "Articles Created",
+      value: dashboard.totalArticles ?? articles.length,
+      icon: "▤",
+      note: "Saved in your library"
+    },
+    {
+      label: "Scheduled Tasks",
+      value: dashboard.scheduled ?? 0,
+      icon: "◷",
+      note: "Upcoming content jobs"
+    }
   ];
 
   return (
-    <>
-      <style>{css}</style>
+    <div className="app">
 
-      <div className="app">
-        <aside className="sidebar">
-          <div className="brand">
-            <div className="brand-icon">AI</div>
+      {/* SIDEBAR */}
+      <aside className="sidebar">
+
+        <div className="brand">
+          <div className="brand-icon">AI</div>
+          <div>
+            <h2>Content Studio</h2>
+            <small>Intelligent SEO Workspace</small>
+          </div>
+        </div>
+
+        <div className="menu-label">WORKSPACE</div>
+
+        <nav>
+          <div className="nav-item active">
+            <span className="nav-icon">▦</span>
+            <span>Dashboard</span>
+          </div>
+
+          <div className="nav-item">
+            <span className="nav-icon">✦</span>
+            <span>AI Article Generator</span>
+          </div>
+
+          <div className="nav-item">
+            <span className="nav-icon">▤</span>
+            <span>Article Library</span>
+          </div>
+
+          <div className="nav-item">
+            <span className="nav-icon">◷</span>
+            <span>Content Scheduler</span>
+          </div>
+        </nav>
+
+        <div className="menu-label">MANAGEMENT</div>
+
+        <nav>
+          <div className="nav-item">
+            <span className="nav-icon">🌐</span>
+            <span>Websites</span>
+          </div>
+
+          <div className="nav-item">
+            <span className="nav-icon">✧</span>
+            <span>AI Providers</span>
+          </div>
+
+          <div className="nav-item">
+            <span className="nav-icon">▧</span>
+            <span>Media Library</span>
+          </div>
+
+          <div className="nav-item">
+            <span className="nav-icon">⚙</span>
+            <span>Settings</span>
+          </div>
+        </nav>
+
+        <div className="sidebar-bottom">
+
+          <div className="plan-card">
+            <small>YOUR WORKSPACE</small>
+            <strong>AI Content Studio</strong>
+            <div className="plan-line">
+              <span />
+            </div>
+          </div>
+
+          <div className="profile">
+            <div className="avatar">AI</div>
             <div>
-              <h2>Content Studio</h2>
-              <small>Intelligent SEO Workspace</small>
+              <strong>Workspace Owner</strong>
+              <small>Local desktop account</small>
             </div>
           </div>
 
-          <div className="menu-label">WORKSPACE</div>
-          <nav>
-            <div className="nav-item active"><span className="nav-icon">▦</span><span>Dashboard</span></div>
-            <div className="nav-item"><span className="nav-icon">✦</span><span>AI Article Generator</span></div>
-            <div className="nav-item"><span className="nav-icon">▤</span><span>Article Library</span></div>
-            <div className="nav-item"><span className="nav-icon">◷</span><span>Content Scheduler</span></div>
-          </nav>
+        </div>
+      </aside>
 
-          <div className="menu-label">MANAGEMENT</div>
-          <nav>
-            <div className="nav-item"><span className="nav-icon">🌐</span><span>Websites</span></div>
-            <div className="nav-item"><span className="nav-icon">✧</span><span>AI Providers</span></div>
-            <div className="nav-item"><span className="nav-icon">▧</span><span>Media Library</span></div>
-            <div className="nav-item"><span className="nav-icon">⚙</span><span>Settings</span></div>
-          </nav>
+      {/* MAIN CONTENT */}
+      <main className="main">
 
-          <div className="sidebar-bottom">
-            <div className="plan-card">
-              <small>YOUR WORKSPACE</small>
-              <strong>AI Content Studio</strong>
-              <div className="plan-line"><span /></div>
-            </div>
-            <div className="profile">
-              <div className="avatar">AI</div>
-              <div>
-                <strong>Workspace Owner</strong>
-                <small>Local desktop account</small>
-              </div>
-            </div>
-          </div>
-        </aside>
-
-        <main className="main">
-          <header className="topbar">
-            <div>
-              <h1>Dashboard</h1>
-              <p>Your content operations, all in one place.</p>
-            </div>
-            <div className="top-actions">
-              <span className="system-status"><span className="status-dot" /> System Online</span>
-              <button className="refresh" onClick={loadData}>↻ &nbsp; Refresh</button>
-            </div>
-          </header>
-
-          <section className="hero">
-            <div className="hero-content">
-              <span className="hero-tag">✦ &nbsp; YOUR AI CONTENT WORKSPACE</span>
-              <h2>Turn ideas into search-ready content.</h2>
-              <p>Generate with multiple AI models, compare results and manage your WordPress content from one workspace.</p>
-            </div>
-            <div className="hero-art">✧</div>
-          </section>
-
-          <div className="section-title">
-            <h3>Workspace Overview</h3>
-            <span>LIVE WORKSPACE DATA</span>
+        <header className="topbar">
+          <div>
+            <h1>Dashboard</h1>
+            <p>Your content operations, all in one place.</p>
           </div>
 
-          <section className="stats">
-            {stats.map((item) => (
-              <div className="stat-card" key={item.label}>
-                <div className="stat-top">
-                  <label>{item.label}</label>
-                  <div className="stat-icon">{item.icon}</div>
-                </div>
-                <strong>{loading ? "—" : item.value}</strong>
-                <div className="stat-note">{item.note}</div>
-              </div>
-            ))}
-          </section>
+          <div className="top-actions">
+            <span className="system-status">
+              <span className="status-dot" />
+              System Online
+            </span>
 
-          <section className="two-columns">
-            <div className="panel">
-              <div className="panel-heading">
-                <h3>Connected Websites</h3>
-                <span>{sites.length} websites</span>
+            <button
+              className="refresh"
+              onClick={() => void loadData()}
+              disabled={loading}
+            >
+              ↻ &nbsp; {loading ? "Loading..." : "Refresh"}
+            </button>
+          </div>
+        </header>
+
+        {/* HERO */}
+        <section className="hero">
+
+          <div className="hero-content">
+            <span className="hero-tag">
+              ✦ &nbsp; YOUR AI CONTENT WORKSPACE
+            </span>
+
+            <h2>Turn ideas into search-ready content.</h2>
+
+            <p>
+              Generate with multiple AI models, compare results
+              and manage your WordPress content from one workspace.
+            </p>
+          </div>
+
+          <div className="hero-art">✧</div>
+
+        </section>
+
+        {/* STATISTICS */}
+        <div className="section-title">
+          <h3>Workspace Overview</h3>
+          <span>LIVE WORKSPACE DATA</span>
+        </div>
+
+        <section className="stats">
+
+          {stats.map((item) => (
+            <div className="stat-card" key={item.label}>
+
+              <div className="stat-top">
+                <label>{item.label}</label>
+                <div className="stat-icon">{item.icon}</div>
               </div>
 
-              {loading ? <div className="empty">Loading websites...</div> :
-                sites.length === 0 ? (
-                  <div className="empty">
-                    <div className="empty-icon">🌐</div>
-                    <h4>No websites connected</h4>
-                    <p>Connect WordPress websites to manage your content.</p>
-                  </div>
-                ) : sites.slice(0, 5).map((site, index) => (
-                  <div className="list-row" key={site.id ?? index}>
-                    <div className="list-icon">W</div>
-                    <div className="list-info">
-                      <strong>{site.name || site.url}</strong>
-                      <small>{site.url}</small>
-                    </div>
-                    <span className="connected">Connected</span>
-                  </div>
-                ))
-              }
+              <strong>
+                {loading ? "—" : item.value}
+              </strong>
+
+              <div className="stat-note">{item.note}</div>
+
             </div>
+          ))}
 
-            <div className="panel">
-              <div className="panel-heading">
-                <h3>AI Engine Connections</h3>
-                <span>{providers.length} providers</span>
-              </div>
+        </section>
 
-              {loading ? <div className="empty">Loading AI providers...</div> :
-                providers.length === 0 ? (
-                  <div className="empty">
-                    <div className="empty-icon">✦</div>
-                    <h4>No AI engines configured</h4>
-                    <p>Connect Gemini, Groq or OpenRouter to begin.</p>
-                  </div>
-                ) : providers.slice(0, 5).map((provider, index) => (
-                  <div className="list-row" key={provider.id ?? index}>
-                    <div className="list-icon">✦</div>
-                    <div className="list-info">
-                      <strong>{provider.name || provider.provider}</strong>
-                      <small>{provider.model || "AI model"}</small>
-                    </div>
-                    <span className="connected">Configured</span>
-                  </div>
-                ))
-              }
-            </div>
-          </section>
+        {/* CONNECTIONS */}
+        <section className="two-columns">
 
-          <section className="panel recent">
+          {/* WORDPRESS WEBSITES */}
+          <div className="panel">
+
             <div className="panel-heading">
-              <h3>Recent Articles</h3>
-              <span>{articles.length} saved articles</span>
+              <h3>Connected Websites</h3>
+              <span>{sites.length} websites</span>
             </div>
 
-            {loading ? <div className="empty">Loading articles...</div> :
-              articles.length === 0 ? (
-                <div className="empty">
-                  <div className="empty-icon">▤</div>
-                  <h4>Your article library is waiting</h4>
-                  <p>Generated articles will appear here for review and editing.</p>
-                </div>
-              ) : (
-                <>
-                  <div className="article-header">
-                    <span>ARTICLE TITLE</span>
-                    <span>STATUS</span>
-                    <span>DATE</span>
+            {loading ? (
+              <div className="empty">Loading websites...</div>
+            ) : sites.length === 0 ? (
+
+              <div className="empty">
+                <div className="empty-icon">🌐</div>
+                <h4>No websites connected</h4>
+                <p>
+                  Connect WordPress websites to manage your content.
+                </p>
+              </div>
+
+            ) : (
+
+              sites.slice(0, 5).map((site) => (
+                <div className="list-row" key={site.id}>
+
+                  <div className="list-icon">W</div>
+
+                  <div className="list-info">
+                    <strong>{site.name || site.url}</strong>
+                    <small>{site.url}</small>
                   </div>
-                  {articles.slice(0, 8).map((article, index) => (
-                    <div className="article-row" key={article.id ?? index}>
-                      <strong>{article.title || "Untitled article"}</strong>
-                      <span className="article-status">{article.status || "Generated"}</span>
-                      <small className="article-date">{article.created_at || "—"}</small>
-                    </div>
-                  ))}
-                </>
-              )
-            }
-          </section>
 
-          {error && <div className="empty">{error}</div>}
+                  <span className="connected">Connected</span>
 
-          <footer>AI Content Studio · Premium Desktop Workspace · Portable Edition</footer>
-        </main>
-      </div>
-    </>
+                </div>
+              ))
+
+            )}
+
+          </div>
+
+          {/* AI PROVIDERS */}
+          <div className="panel">
+
+            <div className="panel-heading">
+              <h3>AI Engine Connections</h3>
+              <span>{providers.length} providers</span>
+            </div>
+
+            {loading ? (
+              <div className="empty">Loading AI providers...</div>
+            ) : providers.length === 0 ? (
+
+              <div className="empty">
+                <div className="empty-icon">✦</div>
+                <h4>No AI engines configured</h4>
+                <p>
+                  Connect Gemini, Groq or OpenRouter to begin.
+                </p>
+              </div>
+
+            ) : (
+
+              providers.slice(0, 5).map((provider) => (
+                <div className="list-row" key={provider.id}>
+
+                  <div className="list-icon">✦</div>
+
+                  <div className="list-info">
+                    <strong>
+                      {provider.name || provider.provider}
+                    </strong>
+                    <small>{provider.model || "AI model"}</small>
+                  </div>
+
+                  <span className="connected">Configured</span>
+
+                </div>
+              ))
+
+            )}
+
+          </div>
+
+        </section>
+
+        {/* RECENT ARTICLES */}
+        <section className="panel recent">
+
+          <div className="panel-heading">
+            <h3>Recent Articles</h3>
+            <span>{articles.length} saved articles</span>
+          </div>
+
+          {loading ? (
+
+            <div className="empty">Loading articles...</div>
+
+          ) : articles.length === 0 ? (
+
+            <div className="empty">
+              <div className="empty-icon">▤</div>
+              <h4>Your article library is waiting</h4>
+              <p>
+                Generated articles will appear here for review and editing.
+              </p>
+            </div>
+
+          ) : (
+
+            <>
+              <div className="article-header">
+                <span>ARTICLE TITLE</span>
+                <span>STATUS</span>
+                <span>DATE</span>
+              </div>
+
+              {articles.slice(0, 8).map((article) => (
+
+                <div className="article-row" key={article.id}>
+
+                  <strong>
+                    {article.title || "Untitled article"}
+                  </strong>
+
+                  <span className="article-status">
+                    {article.status || "Generated"}
+                  </span>
+
+                  <small className="article-date">
+                    {article.created_at || "—"}
+                  </small>
+
+                </div>
+
+              ))}
+
+            </>
+
+          )}
+
+        </section>
+
+        {error && (
+          <div className="empty">
+            {error}
+          </div>
+        )}
+
+        <footer>
+          AI Content Studio · Premium Desktop Workspace · Portable Edition
+        </footer>
+
+      </main>
+    </div>
   );
 }
