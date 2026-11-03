@@ -7,10 +7,13 @@ import { runParallelGeneration } from "./services/generation";
 import { publishDraft } from "./services/wordpress";
 import { startScheduler } from "./services/scheduler";
 
-let win: BrowserWindow;
+let win: BrowserWindow | null = null;
 let db: Database;
 
-// Keep portable application data beside the EXE.
+// --------------------------------------------------
+// Portable application data
+// --------------------------------------------------
+
 const portableBase =
   process.env.PORTABLE_EXECUTABLE_DIR ||
   (process.env.PORTABLE_EXECUTABLE_FILE
@@ -32,7 +35,51 @@ if (isPortableBuild && portableBase) {
   );
 }
 
-function createWindow() {
+// --------------------------------------------------
+// Encryption helpers
+// --------------------------------------------------
+
+function encryptApiKey(apiKey: string): {
+  apiKey: string;
+  encrypted: boolean;
+} {
+  const encryptionAvailable = safeStorage.isEncryptionAvailable();
+
+  const encryptedKey = encryptionAvailable
+    ? safeStorage.encryptString(apiKey).toString("base64")
+    : Buffer.from(apiKey).toString("base64");
+
+  return {
+    apiKey: encryptedKey,
+    encrypted: encryptionAvailable
+  };
+}
+
+function decryptApiKey(provider: any): any {
+  const storedKey = provider.api_key ?? provider.apiKey ?? "";
+
+  let apiKey = "";
+
+  if (storedKey) {
+    apiKey =
+      provider.encrypted && safeStorage.isEncryptionAvailable()
+        ? safeStorage.decryptString(
+            Buffer.from(storedKey, "base64")
+          )
+        : Buffer.from(storedKey, "base64").toString("utf8");
+  }
+
+  return {
+    ...provider,
+    apiKey
+  };
+}
+
+// --------------------------------------------------
+// Browser window
+// --------------------------------------------------
+
+function createWindow(): void {
   win = new BrowserWindow({
     width: 1440,
     height: 920,
@@ -55,7 +102,15 @@ function createWindow() {
       path.join(__dirname, "../dist/index.html")
     );
   }
+
+  win.on("closed", () => {
+    win = null;
+  });
 }
+
+// --------------------------------------------------
+// Application initialization
+// --------------------------------------------------
 
 app.whenReady().then(() => {
   const dataDir = app.getPath("userData");
@@ -66,6 +121,7 @@ app.whenReady().then(() => {
     path.join(dataDir, "studio.sqlite")
   );
 
+  // Start automatic scheduler
   startScheduler(db, (jobId: number) => {
     win?.webContents.send("job:scheduled", jobId);
   });
@@ -79,72 +135,105 @@ app.whenReady().then(() => {
   });
 });
 
+// --------------------------------------------------
+// Application shutdown
+// --------------------------------------------------
+
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
 });
 
+app.on("before-quit", () => {
+  if (db) {
+    db.close();
+  }
+});
+
+// --------------------------------------------------
 // Dashboard
-ipcMain.handle("dashboard:get", () => db.dashboard());
+// --------------------------------------------------
 
+ipcMain.handle("dashboard:get", () => {
+  return db.dashboard();
+});
+
+// --------------------------------------------------
 // Websites
-ipcMain.handle("sites:list", () => db.listSites());
+// --------------------------------------------------
 
-ipcMain.handle("sites:add", (_e, site) =>
-  db.addSite(site)
-);
+ipcMain.handle("sites:list", () => {
+  return db.listSites();
+});
 
-ipcMain.handle("sites:delete", (_e, id) =>
-  db.deleteSite(id)
-);
+ipcMain.handle("sites:add", (_e, site) => {
+  return db.addSite(site);
+});
 
+ipcMain.handle("sites:delete", (_e, id) => {
+  return db.deleteSite(id);
+});
+
+// --------------------------------------------------
 // AI Providers
+// --------------------------------------------------
+
 ipcMain.handle("providers:save", (_e, provider) => {
-  const encrypted = safeStorage.isEncryptionAvailable()
-    ? safeStorage.encryptString(provider.apiKey).toString("base64")
-    : Buffer.from(provider.apiKey).toString("base64");
+  const encryption = encryptApiKey(provider.apiKey ?? provider.api_key ?? "");
 
   db.saveProvider({
     ...provider,
-    apiKey: encrypted,
-    encrypted: safeStorage.isEncryptionAvailable()
+    apiKey: encryption.apiKey,
+    encrypted: encryption.encrypted
   });
 
   return { ok: true };
 });
 
-ipcMain.handle("providers:list", () =>
-  db.listProviders().map(({ apiKey, ...p }: any) => p)
-);
+ipcMain.handle("providers:list", () => {
+  return db.listProviders();
+});
 
+// --------------------------------------------------
 // Articles
-ipcMain.handle("articles:list", () =>
-  db.listArticles()
-);
+// --------------------------------------------------
+
+ipcMain.handle("articles:list", () => {
+  return db.listArticles();
+});
+
+// --------------------------------------------------
+// Parallel AI Article Generation
+// --------------------------------------------------
 
 ipcMain.handle("articles:generate", async (_e, input) => {
   const jobId = db.createJob(input);
 
   try {
-    const providers = db.getEnabledProviders().map((p: any) => ({
-      ...p,
-      apiKey:
-        p.encrypted && safeStorage.isEncryptionAvailable()
-          ? safeStorage.decryptString(
-              Buffer.from(p.apiKey, "base64")
-            )
-          : Buffer.from(p.apiKey, "base64").toString("utf8")
-    }));
+    const providers = db
+      .getEnabledProviders()
+      .map((provider: any) => decryptApiKey(provider));
 
+    if (providers.length === 0) {
+      throw new Error(
+        "No enabled AI providers found. Please configure an AI provider first."
+      );
+    }
+
+    // Run all enabled AI providers in parallel
     const results = await runParallelGeneration(
       input,
       providers
     );
 
-    db.saveGenerationResults(jobId, input, results);
+    // Save generated articles using the current database signature
+    db.saveGenerationResults(jobId, results);
 
-    return { jobId, results };
+    return {
+      jobId,
+      results
+    };
   } catch (err: any) {
     db.failJob(
       jobId,
@@ -155,41 +244,66 @@ ipcMain.handle("articles:generate", async (_e, input) => {
   }
 });
 
+// --------------------------------------------------
 // WordPress Draft Publishing
+// --------------------------------------------------
+
 ipcMain.handle(
   "articles:publish",
   async (_e, { articleId, siteId }) => {
     const article = db.getArticle(articleId);
+
+    if (!article) {
+      throw new Error("Article not found.");
+    }
+
     const site = db.getSite(siteId);
+
+    if (!site) {
+      throw new Error("WordPress website not found.");
+    }
 
     const result = await publishDraft(site, article);
 
-    db.markPublished(articleId, result);
+    // Current database method accepts only article ID
+    db.markPublished(articleId);
 
     return result;
   }
 );
 
-ipcMain.handle("articles:save-edit", (_e, article) =>
-  db.updateArticle(article)
-);
+// --------------------------------------------------
+// Article Editing
+// --------------------------------------------------
 
-// Scheduler
-ipcMain.handle("schedule:add", (_e, item) =>
-  db.addSchedule(item)
-);
+ipcMain.handle("articles:save-edit", (_e, article) => {
+  return db.updateArticle(article);
+});
 
-ipcMain.handle("schedule:list", () =>
-  db.listSchedules()
-);
+// --------------------------------------------------
+// Automatic Scheduling
+// --------------------------------------------------
 
-ipcMain.handle("schedule:delete", (_e, id) =>
-  db.deleteSchedule(id)
-);
+ipcMain.handle("schedule:add", (_e, item) => {
+  return db.addSchedule(item);
+});
 
-// Image generation extension point
-ipcMain.handle("images:generate", async () => ({
-  ok: false,
-  message:
-    "Image generation adapter is not implemented in V1."
-}));
+ipcMain.handle("schedule:list", () => {
+  return db.listSchedules();
+});
+
+ipcMain.handle("schedule:delete", (_e, id) => {
+  return db.deleteSchedule(id);
+});
+
+// --------------------------------------------------
+// Image Generation Extension Point
+// --------------------------------------------------
+
+ipcMain.handle("images:generate", async () => {
+  return {
+    ok: false,
+    message:
+      "Image generation adapter is not implemented in V1."
+  };
+});
