@@ -8,13 +8,12 @@
     "dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
     "build": "tsc -b && vite build && tsc -p electron/tsconfig.json",
     "start": "electron .",
-    "dist": "npm run build && electron-builder --win nsis --x64",
-    "release": "npm run build && electron-builder --win nsis --x64 --publish always"
+    "dist:portable": "npm run build && electron-builder --win portable --x64 --config.directories.output=release/portable",
+    "make:portable": "npm run dist:portable"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",
     "electron-store": "^10.0.1",
-    "electron-updater": "^6.6.2",
     "node-cron": "^3.0.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -39,7 +38,7 @@
     "appId": "com.aicontentstudio.desktop",
     "productName": "AI Content Studio",
     "directories": {
-      "output": "release"
+      "output": "release/portable"
     },
     "files": [
       "dist/**/*",
@@ -49,32 +48,17 @@
     "win": {
       "target": [
         {
-          "target": "nsis",
+          "target": "portable",
           "arch": [
             "x64"
           ]
         }
       ],
-      "artifactName": "AI-Content-Studio-Setup-${version}-x64.${ext}"
+      "artifactName": "AI-Content-Studio-Portable-${version}-x64.${ext}"
     },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "perMachine": false,
-      "allowElevation": false,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "AI Content Studio",
-      "deleteAppDataOnUninstall": false
+    "portable": {
+      "artifactName": "AI-Content-Studio-Portable-${version}-x64.${ext}"
     },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "madcraves",
-        "repo": "ai-content-studio",
-        "releaseType": "release"
-      }
-    ],
     "asar": true,
     "asarUnpack": [
       "**/*.node"
