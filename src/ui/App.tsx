@@ -1,32 +1,63 @@
 import React, { useEffect, useState } from "react";
 import "./styles.css";
 
+const studio = window.studio as any;
+
 type Page =
   | "Dashboard"
   | "AI Article Generator"
   | "Article Library"
+  | "Content Scheduler"
   | "Websites"
-  | "AI Providers"
-  | "Content Scheduler";
+  | "AI Providers";
+
+const PROVIDERS = [
+  {
+    id: "gemini",
+    name: "Google Gemini",
+    description: "Google's advanced AI models",
+    defaultModel: "gemini-2.0-flash"
+  },
+  {
+    id: "groq",
+    name: "Groq",
+    description: "Ultra-fast AI inference",
+    defaultModel: "llama-3.3-70b-versatile"
+  },
+  {
+    id: "openrouter",
+    name: "OpenRouter",
+    description: "Access multiple AI models",
+    defaultModel: "openai/gpt-4o-mini"
+  }
+];
 
 export default function App() {
   const [page, setPage] = useState<Page>("Dashboard");
-  const [sites, setSites] = useState<Website[]>([]);
-  const [providers, setProviders] = useState<AIProvider[]>([]);
-  const [articles, setArticles] = useState<Article[]>([]);
-  const [schedules, setSchedules] = useState<Schedule[]>([]);
-  const [stats, setStats] = useState<DashboardStats>({});
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
+
+  const [sites, setSites] = useState<any[]>([]);
+  const [providers, setProviders] = useState<any[]>([]);
+  const [articles, setArticles] = useState<any[]>([]);
+  const [schedules, setSchedules] = useState<any[]>([]);
+
+  const [stats, setStats] = useState<any>({});
+  const [online, setOnline] = useState<boolean | null>(null);
+
+  const [providerModels, setProviderModels] = useState<Record<string, string>>({
+    gemini: "gemini-2.0-flash",
+    groq: "llama-3.3-70b-versatile",
+    openrouter: "openai/gpt-4o-mini"
+  });
+
+  const [providerKeys, setProviderKeys] = useState<Record<string, string>>({});
+  const [providerStatus, setProviderStatus] = useState<Record<string, string>>({});
+  const [providerLoading, setProviderLoading] = useState<string | null>(null);
 
   const [siteName, setSiteName] = useState("");
   const [siteUrl, setSiteUrl] = useState("");
   const [siteToken, setSiteToken] = useState("");
-
-  const [providerName, setProviderName] = useState("Gemini");
-  const [providerModel, setProviderModel] = useState("gemini-2.0-flash");
-  const [apiKey, setApiKey] = useState("");
+  const [siteStatus, setSiteStatus] = useState<Record<number, string>>({});
+  const [siteLoading, setSiteLoading] = useState<number | null>(null);
 
   const [topic, setTopic] = useState("");
   const [keyword, setKeyword] = useState("");
@@ -34,16 +65,27 @@ export default function App() {
   const [tone, setTone] = useState("Professional");
   const [instructions, setInstructions] = useState("");
 
-  const [editingArticle, setEditingArticle] =
-    useState<Article | null>(null);
-
   const [scheduleTopic, setScheduleTopic] = useState("");
   const [scheduleSite, setScheduleSite] = useState("");
   const [scheduleDate, setScheduleDate] = useState("");
 
+  const [editingArticle, setEditingArticle] = useState<any>(null);
+
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const menu: Page[] = [
+    "Dashboard",
+    "AI Article Generator",
+    "Article Library",
+    "Content Scheduler",
+    "Websites",
+    "AI Providers"
+  ];
+
   async function loadData() {
     setLoading(true);
-    setError("");
 
     try {
       const [
@@ -53,11 +95,11 @@ export default function App() {
         articleList,
         scheduleList
       ] = await Promise.all([
-        window.studio.dashboard(),
-        window.studio.listSites(),
-        window.studio.listProviders(),
-        window.studio.listArticles(),
-        window.studio.listSchedules()
+        studio.dashboard(),
+        studio.listSites(),
+        studio.listProviders(),
+        studio.listArticles(),
+        studio.listSchedules()
       ]);
 
       setStats(dashboard || {});
@@ -65,19 +107,54 @@ export default function App() {
       setProviders(providerList || []);
       setArticles(articleList || []);
       setSchedules(scheduleList || []);
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to load application data."
-      );
+
+      const configured: Record<string, string> = {};
+
+      for (const provider of providerList || []) {
+        const id = String(
+          provider.provider || provider.name
+        ).toLowerCase();
+
+        configured[id] = "connected";
+      }
+
+      setProviderStatus(previous => ({
+        ...configured,
+        ...previous
+      }));
+    } catch (err: any) {
+      setError(err?.message || "Unable to load application data.");
     } finally {
       setLoading(false);
     }
   }
 
+  async function refreshNetwork() {
+    try {
+      const result = await studio.getConnectionStatus();
+      setOnline(Boolean(result?.online));
+    } catch {
+      setOnline(false);
+    }
+  }
+
   useEffect(() => {
     void loadData();
+    void refreshNetwork();
+
+    const unsubscribe = studio.onNetworkStatus?.(
+      (status: boolean) => setOnline(status)
+    );
+
+    const timer = window.setInterval(
+      refreshNetwork,
+      15000
+    );
+
+    return () => {
+      window.clearInterval(timer);
+      unsubscribe?.();
+    };
   }, []);
 
   function notify(text: string) {
@@ -85,18 +162,93 @@ export default function App() {
     setError("");
   }
 
-  function showError(err: unknown) {
+  function showError(err: any) {
     setError(
-      err instanceof Error ? err.message : "Something went wrong."
+      err?.message || "Something went wrong."
     );
     setMessage("");
+  }
+
+  async function saveProvider(providerId: string) {
+    const model = providerModels[providerId];
+    const apiKey = providerKeys[providerId] || "";
+
+    if (!model.trim()) {
+      setError("Please enter a model ID.");
+      return;
+    }
+
+    if (!apiKey.trim()) {
+      setError("Please enter the API key.");
+      return;
+    }
+
+    setProviderLoading(providerId);
+
+    try {
+      const provider = PROVIDERS.find(p => p.id === providerId)!;
+
+      await studio.saveProvider({
+        name: provider.name,
+        provider: providerId,
+        model,
+        apiKey,
+        enabled: true
+      });
+
+      setProviderKeys(previous => ({
+        ...previous,
+        [providerId]: ""
+      }));
+
+      setProviderStatus(previous => ({
+        ...previous,
+        [providerId]: "connected"
+      }));
+
+      notify(`${provider.name} API key saved securely.`);
+      await loadData();
+    } catch (err) {
+      showError(err);
+    } finally {
+      setProviderLoading(null);
+    }
+  }
+
+  async function testProvider(providerId: string) {
+    setProviderLoading(providerId);
+
+    try {
+      setProviderStatus(previous => ({
+        ...previous,
+        [providerId]: "testing"
+      }));
+
+      const result = await studio.testProvider(providerId);
+
+      setProviderStatus(previous => ({
+        ...previous,
+        [providerId]: result?.ok ? "connected" : "disconnected"
+      }));
+
+      notify(result?.message || "Provider connection successful.");
+    } catch (err) {
+      setProviderStatus(previous => ({
+        ...previous,
+        [providerId]: "disconnected"
+      }));
+
+      showError(err);
+    } finally {
+      setProviderLoading(null);
+    }
   }
 
   async function addWebsite(e: React.FormEvent) {
     e.preventDefault();
 
     try {
-      await window.studio.addSite({
+      await studio.addSite({
         name: siteName,
         url: siteUrl,
         token: siteToken
@@ -105,39 +257,49 @@ export default function App() {
       setSiteName("");
       setSiteUrl("");
       setSiteToken("");
-      notify("Website added successfully.");
+
+      notify("Website saved. You can now test its connection.");
       await loadData();
     } catch (err) {
       showError(err);
     }
   }
 
-  async function removeWebsite(id: number) {
+  async function testWebsite(id: number) {
+    setSiteLoading(id);
+
+    try {
+      setSiteStatus(previous => ({
+        ...previous,
+        [id]: "testing"
+      }));
+
+      await studio.testSite(id);
+
+      setSiteStatus(previous => ({
+        ...previous,
+        [id]: "connected"
+      }));
+
+      notify("Website connection successful.");
+    } catch (err) {
+      setSiteStatus(previous => ({
+        ...previous,
+        [id]: "disconnected"
+      }));
+
+      showError(err);
+    } finally {
+      setSiteLoading(null);
+    }
+  }
+
+  async function deleteWebsite(id: number) {
     if (!window.confirm("Delete this website?")) return;
 
     try {
-      await window.studio.deleteSite(id);
+      await studio.deleteSite(id);
       notify("Website deleted.");
-      await loadData();
-    } catch (err) {
-      showError(err);
-    }
-  }
-
-  async function addProvider(e: React.FormEvent) {
-    e.preventDefault();
-
-    try {
-      await window.studio.saveProvider({
-        name: providerName,
-        provider: providerName.toLowerCase(),
-        model: providerModel,
-        apiKey,
-        enabled: true
-      });
-
-      setApiKey("");
-      notify("AI provider saved successfully.");
       await loadData();
     } catch (err) {
       showError(err);
@@ -153,11 +315,9 @@ export default function App() {
     }
 
     setLoading(true);
-    setError("");
-    setMessage("");
 
     try {
-      const result = await window.studio.generate({
+      const result = await studio.generate({
         topic,
         keyword,
         wordCount: Number(wordCount),
@@ -168,7 +328,7 @@ export default function App() {
       const count = result?.results?.length ?? 0;
 
       notify(
-        count > 0
+        count
           ? `${count} article version(s) generated successfully.`
           : "Generation completed."
       );
@@ -183,37 +343,38 @@ export default function App() {
     }
   }
 
-  async function saveArticle(article: Article) {
+  async function saveArticle(article: any) {
     try {
-      await window.studio.saveEdit(article);
+      await studio.saveEdit(article);
       setEditingArticle(null);
-      notify("Article saved.");
+      notify("Article saved successfully.");
       await loadData();
     } catch (err) {
       showError(err);
     }
   }
 
-  async function sendToWordPress(article: Article) {
-    if (sites.length === 0) {
-      setError("Please connect a WordPress website first.");
+  async function sendToWordPress(article: any) {
+    if (!sites.length) {
       setPage("Websites");
+      setError("Connect a WordPress website first.");
       return;
     }
 
-    const siteId = Number(
-      window.prompt(
-        "Enter the website ID:\n" +
-        sites.map(s => `${s.id}: ${s.name || s.url}`).join("\n")
-      )
+    const options = sites
+      .map(site => `${site.id}: ${site.name}`)
+      .join("\n");
+
+    const id = Number(
+      window.prompt(`Select WordPress website ID:\n${options}`)
     );
 
-    if (!siteId || !sites.some(s => s.id === siteId)) return;
+    if (!id || !sites.some(site => site.id === id)) return;
 
     try {
-      await window.studio.publish({
+      await studio.publish({
         articleId: article.id,
-        siteId
+        siteId: id
       });
 
       notify("Article sent to WordPress.");
@@ -223,15 +384,11 @@ export default function App() {
     }
   }
 
-  async function addNewSchedule(e: React.FormEvent) {
+  async function addSchedule(e: React.FormEvent) {
     e.preventDefault();
 
     try {
-      if (!scheduleTopic.trim() || !scheduleDate || !scheduleSite) {
-        throw new Error("Complete all schedule fields.");
-      }
-
-      await window.studio.addSchedule({
+      await studio.addSchedule({
         title: scheduleTopic,
         topic: scheduleTopic,
         siteId: Number(scheduleSite),
@@ -240,7 +397,9 @@ export default function App() {
       });
 
       setScheduleTopic("");
+      setScheduleSite("");
       setScheduleDate("");
+
       notify("Schedule saved.");
       await loadData();
     } catch (err) {
@@ -248,9 +407,9 @@ export default function App() {
     }
   }
 
-  async function removeSchedule(id: number) {
+  async function deleteSchedule(id: number) {
     try {
-      await window.studio.deleteSchedule(id);
+      await studio.deleteSchedule(id);
       notify("Schedule deleted.");
       await loadData();
     } catch (err) {
@@ -258,27 +417,47 @@ export default function App() {
     }
   }
 
-  const menu: Page[] = [
-    "Dashboard",
-    "AI Article Generator",
-    "Article Library",
-    "Content Scheduler",
-    "Websites",
-    "AI Providers"
-  ];
+  function renderProviderStatus(id: string) {
+    const status = providerStatus[id];
+
+    if (status === "testing") {
+      return <span className="disconnected">Testing...</span>;
+    }
+
+    if (status === "connected") {
+      return (
+        <span className="connected">
+          <span className="status-dot" />
+          Configured
+        </span>
+      );
+    }
+
+    if (status === "disconnected") {
+      return (
+        <span className="disconnected">
+          <span className="status-dot offline" />
+          Disconnected
+        </span>
+      );
+    }
+
+    return <span className="disconnected">Not configured</span>;
+  }
 
   return (
     <div className="app">
+
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-icon">AI</div>
           <div>
             <h2>Content Studio</h2>
-            <small>Intelligent SEO Workspace</small>
+            <small>Professional AI Workspace</small>
           </div>
         </div>
 
-        <div className="menu-label">WORKSPACE</div>
+        <div className="menu-label">MAIN WORKSPACE</div>
 
         <nav>
           {menu.map(item => (
@@ -287,8 +466,8 @@ export default function App() {
               className={`nav-item ${page === item ? "active" : ""}`}
               onClick={() => {
                 setPage(item);
-                setMessage("");
                 setError("");
+                setMessage("");
               }}
             >
               {item}
@@ -298,10 +477,20 @@ export default function App() {
 
         <div className="sidebar-bottom">
           <div className="plan-card">
-            <small>YOUR WORKSPACE</small>
-            <strong>AI Content Studio</strong>
-            <div className="plan-line"><span /></div>
+            <small>SYSTEM CONNECTION</small>
+            <strong>
+              {online === null
+                ? "Checking connection..."
+                : online
+                ? "Internet connected"
+                : "Internet offline"}
+            </strong>
+            <span className="system-status">
+              <span className={`status-dot ${online ? "" : "offline"}`} />
+              {online === null ? "Checking" : online ? "Online" : "Offline"}
+            </span>
           </div>
+
           <div className="profile">
             <div className="avatar">AI</div>
             <div>
@@ -313,13 +502,23 @@ export default function App() {
       </aside>
 
       <main className="main">
+
         <header className="topbar">
           <div>
             <h1>{page}</h1>
-            <p>Manage your AI content workspace.</p>
+            <p>Manage your AI content operations.</p>
           </div>
+
           <div className="top-actions">
-            <button className="refresh" onClick={() => void loadData()}>
+            <span className={`system-status ${online === false ? "offline" : ""}`}>
+              <span className={`status-dot ${online === false ? "offline" : ""}`} />
+              {online === null ? "Checking" : online ? "Online" : "Offline"}
+            </span>
+
+            <button className="refresh" onClick={() => {
+              void loadData();
+              void refreshNetwork();
+            }}>
               ↻ Refresh
             </button>
           </div>
@@ -328,18 +527,21 @@ export default function App() {
         {message && <div className="notice success">{message}</div>}
         {error && <div className="notice error">{error}</div>}
 
+        {/* DASHBOARD */}
+
         {page === "Dashboard" && (
           <>
             <section className="hero">
               <div className="hero-content">
-                <span className="hero-tag">YOUR AI CONTENT WORKSPACE</span>
-                <h2>Turn ideas into search-ready content.</h2>
+                <span className="hero-tag">AI CONTENT AUTOMATION</span>
+                <h2>Build better content. Faster.</h2>
                 <p>
-                  Generate articles with AI, manage your library
-                  and send reviewed content to WordPress drafts.
+                  Generate SEO articles, manage multiple WordPress
+                  websites and organize your entire content workflow
+                  from one workspace.
                 </p>
                 <button onClick={() => setPage("AI Article Generator")}>
-                  Create an article
+                  + Create New Article
                 </button>
               </div>
             </section>
@@ -347,7 +549,7 @@ export default function App() {
             <section className="stats">
               {[
                 ["Connected Websites", sites.length],
-                ["AI Providers", providers.length],
+                ["Configured AI Providers", providers.length],
                 ["Articles Created", stats.totalArticles ?? articles.length],
                 ["Scheduled Tasks", stats.scheduled ?? schedules.length]
               ].map(([label, value]) => (
@@ -355,7 +557,7 @@ export default function App() {
                   <div className="stat-top">
                     <label>{label}</label>
                   </div>
-                  <strong>{loading ? "…" : value}</strong>
+                  <strong>{loading ? "..." : value}</strong>
                 </div>
               ))}
             </section>
@@ -364,10 +566,11 @@ export default function App() {
               <div className="panel-heading">
                 <h3>Recent Articles</h3>
                 <button onClick={() => setPage("Article Library")}>
-                  View library
+                  View Library
                 </button>
               </div>
-              {articles.slice(0, 5).map(article => (
+
+              {articles.slice(0, 6).map(article => (
                 <div className="list-row" key={article.id}>
                   <div className="list-info">
                     <strong>{article.title}</strong>
@@ -375,88 +578,243 @@ export default function App() {
                   </div>
                 </div>
               ))}
-              {articles.length === 0 && <p>No articles created yet.</p>}
+
+              {articles.length === 0 && (
+                <div className="empty">
+                  <h4>No articles yet</h4>
+                  <p>Your generated articles will appear here.</p>
+                </div>
+              )}
             </section>
           </>
         )}
 
-        {page === "Websites" && (
-          <section className="panel">
-            <h3>Connect WordPress Website</h3>
-            <form onSubmit={addWebsite} className="studio-form">
-              <label>Website name</label>
-              <input value={siteName} onChange={e => setSiteName(e.target.value)} required />
-              <label>Website URL</label>
-              <input value={siteUrl} onChange={e => setSiteUrl(e.target.value)} placeholder="https://example.com" required />
-              <label>WordPress Application Password</label>
-              <input type="password" value={siteToken} onChange={e => setSiteToken(e.target.value)} required />
-              <button type="submit">Add Website</button>
-            </form>
-
-            <h3>Connected Websites</h3>
-            {sites.map(site => (
-              <div className="list-row" key={site.id}>
-                <div className="list-info">
-                  <strong>{site.name}</strong>
-                  <small>{site.url}</small>
-                </div>
-                <button onClick={() => void removeWebsite(site.id)}>Delete</button>
-              </div>
-            ))}
-            {sites.length === 0 && <p>No websites connected.</p>}
-          </section>
-        )}
+        {/* AI PROVIDERS */}
 
         {page === "AI Providers" && (
-          <section className="panel">
-            <h3>Configure AI Provider</h3>
-            <form onSubmit={addProvider} className="studio-form">
-              <label>Provider</label>
-              <select value={providerName} onChange={e => {
-                setProviderName(e.target.value);
-                setProviderModel(
-                  e.target.value === "Gemini"
-                    ? "gemini-2.0-flash"
-                    : e.target.value === "Groq"
-                    ? "llama-3.3-70b-versatile"
-                    : "openai/gpt-4o-mini"
-                );
-              }}>
-                <option>Gemini</option>
-                <option>Groq</option>
-                <option>OpenRouter</option>
-              </select>
-              <label>Model ID</label>
-              <input value={providerModel} onChange={e => setProviderModel(e.target.value)} required />
-              <label>API Key</label>
-              <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} required />
-              <button type="submit">Save AI Provider</button>
-            </form>
-
-            <h3>Configured Providers</h3>
-            {providers.map(provider => (
-              <div className="list-row" key={provider.id}>
-                <div className="list-info">
-                  <strong>{provider.name}</strong>
-                  <small>{provider.model}</small>
-                </div>
-                <span>{provider.enabled ? "Enabled" : "Disabled"}</span>
+          <>
+            <section className="panel">
+              <div className="panel-heading">
+                <h3>AI Provider Connections</h3>
+                <span className="connected">
+                  {providers.length} configured
+                </span>
               </div>
-            ))}
-          </section>
+
+              <p>
+                Configure Gemini, Groq and OpenRouter independently.
+                All three providers can remain enabled together.
+              </p>
+            </section>
+
+            <div className="provider-grid">
+              {PROVIDERS.map(provider => {
+                const configured = providers.some(
+                  item =>
+                    String(item.provider || item.name).toLowerCase() === provider.id
+                );
+
+                return (
+                  <section className="panel provider-card" key={provider.id}>
+                    <div className="panel-heading">
+                      <div>
+                        <h3>{provider.name}</h3>
+                        <small>{provider.description}</small>
+                      </div>
+                      {renderProviderStatus(provider.id)}
+                    </div>
+
+                    <div className="provider-logo">
+                      {provider.id === "gemini"
+                        ? "G"
+                        : provider.id === "groq"
+                        ? "GQ"
+                        : "OR"}
+                    </div>
+
+                    <label>Model ID</label>
+                    <input
+                      value={providerModels[provider.id]}
+                      onChange={e =>
+                        setProviderModels(previous => ({
+                          ...previous,
+                          [provider.id]: e.target.value
+                        }))
+                      }
+                      placeholder={provider.defaultModel}
+                    />
+
+                    <label>API Key</label>
+                    <input
+                      type="password"
+                      value={providerKeys[provider.id] || ""}
+                      onChange={e =>
+                        setProviderKeys(previous => ({
+                          ...previous,
+                          [provider.id]: e.target.value
+                        }))
+                      }
+                      placeholder={
+                        configured
+                          ? "Saved key — enter a new key to replace"
+                          : "Enter your API key"
+                      }
+                    />
+
+                    {configured && (
+                      <p className="provider-saved">
+                        <span className="status-dot" />
+                        API key saved
+                      </p>
+                    )}
+
+                    <button
+                      disabled={providerLoading === provider.id}
+                      onClick={() => void saveProvider(provider.id)}
+                    >
+                      {providerLoading === provider.id
+                        ? "Saving..."
+                        : "Save API Configuration"}
+                    </button>
+
+                    <button
+                      className="refresh"
+                      disabled={!configured || providerLoading === provider.id}
+                      onClick={() => void testProvider(provider.id)}
+                    >
+                      {providerLoading === provider.id
+                        ? "Testing..."
+                        : "Test Connection"}
+                    </button>
+                  </section>
+                );
+              })}
+            </div>
+          </>
         )}
+
+        {/* WEBSITES */}
+
+        {page === "Websites" && (
+          <>
+            <section className="panel">
+              <h3>Connect WordPress Website</h3>
+              <p>
+                Add your WordPress website to manage and send articles
+                directly to its Drafts.
+              </p>
+
+              <form onSubmit={addWebsite} className="studio-form">
+                <label>Website Name</label>
+                <input
+                  value={siteName}
+                  onChange={e => setSiteName(e.target.value)}
+                  placeholder="My WordPress Website"
+                  required
+                />
+
+                <label>Website URL</label>
+                <input
+                  type="url"
+                  value={siteUrl}
+                  onChange={e => setSiteUrl(e.target.value)}
+                  placeholder="https://example.com"
+                  required
+                />
+
+                <label>WordPress Application Password</label>
+                <input
+                  type="password"
+                  value={siteToken}
+                  onChange={e => setSiteToken(e.target.value)}
+                  placeholder="Enter application password"
+                  required
+                />
+
+                <button type="submit">+ Connect Website</button>
+              </form>
+            </section>
+
+            <section className="panel">
+              <h3>Connected Websites</h3>
+
+              {sites.map(site => {
+                const status = siteStatus[site.id];
+
+                return (
+                  <div className="list-row" key={site.id}>
+                    <div className="list-info">
+                      <strong>{site.name}</strong>
+                      <small>{site.url}</small>
+                    </div>
+
+                    {status === "connected" ? (
+                      <span className="connected">Connected</span>
+                    ) : status === "testing" ? (
+                      <span className="disconnected">Testing...</span>
+                    ) : status === "disconnected" ? (
+                      <span className="disconnected">Disconnected</span>
+                    ) : (
+                      <span className="disconnected">Not tested</span>
+                    )}
+
+                    <button
+                      disabled={siteLoading === site.id}
+                      onClick={() => void testWebsite(site.id)}
+                    >
+                      Test
+                    </button>
+
+                    <button onClick={() => void deleteWebsite(site.id)}>
+                      Delete
+                    </button>
+                  </div>
+                );
+              })}
+
+              {sites.length === 0 && (
+                <div className="empty">
+                  <h4>No websites connected</h4>
+                  <p>Add a WordPress website to get started.</p>
+                </div>
+              )}
+            </section>
+          </>
+        )}
+
+        {/* ARTICLE GENERATOR */}
 
         {page === "AI Article Generator" && (
           <section className="panel">
-            <h3>Generate SEO Article</h3>
+            <h3>AI Article Generator</h3>
+            <p>Create search-friendly content with your configured AI providers.</p>
+
             <form onSubmit={generateArticle} className="studio-form">
-              <label>Article topic</label>
-              <input value={topic} onChange={e => setTopic(e.target.value)} required placeholder="Enter your article topic" />
-              <label>Primary keyword</label>
-              <input value={keyword} onChange={e => setKeyword(e.target.value)} placeholder="Main SEO keyword" />
-              <label>Target word count</label>
-              <input type="number" min="300" max="10000" value={wordCount} onChange={e => setWordCount(e.target.value)} />
-              <label>Writing tone</label>
+              <label>Article Topic</label>
+              <input
+                value={topic}
+                onChange={e => setTopic(e.target.value)}
+                placeholder="What should the article be about?"
+                required
+              />
+
+              <label>Primary SEO Keyword</label>
+              <input
+                value={keyword}
+                onChange={e => setKeyword(e.target.value)}
+                placeholder="Enter primary keyword"
+              />
+
+              <label>Target Word Count</label>
+              <input
+                type="number"
+                min="300"
+                max="10000"
+                value={wordCount}
+                onChange={e => setWordCount(e.target.value)}
+              />
+
+              <label>Writing Tone</label>
               <select value={tone} onChange={e => setTone(e.target.value)}>
                 <option>Professional</option>
                 <option>Conversational</option>
@@ -464,82 +822,175 @@ export default function App() {
                 <option>Technical</option>
                 <option>Persuasive</option>
               </select>
-              <label>Additional instructions</label>
-              <textarea value={instructions} onChange={e => setInstructions(e.target.value)} rows={5} />
+
+              <label>Additional Instructions</label>
+              <textarea
+                rows={6}
+                value={instructions}
+                onChange={e => setInstructions(e.target.value)}
+                placeholder="Add any special content requirements..."
+              />
+
               <button type="submit" disabled={loading}>
-                {loading ? "Generating..." : "Generate Article"}
+                {loading ? "Generating Article..." : "Generate Article"}
               </button>
             </form>
-            <p>All enabled AI providers are used for parallel generation.</p>
           </section>
         )}
 
+        {/* ARTICLE LIBRARY */}
+
         {page === "Article Library" && (
           <section className="panel">
-            <h3>Saved Articles</h3>
+            <h3>Article Library</h3>
+
             {articles.map(article => (
               <div className="list-row" key={article.id}>
                 <div className="list-info">
                   <strong>{article.title}</strong>
                   <small>{article.status || "Generated"}</small>
                 </div>
-                <button onClick={() => setEditingArticle({ ...article })}>Edit</button>
-                <button onClick={() => void sendToWordPress(article)}>Send to Drafts</button>
+
+                <button onClick={() => setEditingArticle({ ...article })}>
+                  Edit
+                </button>
+
+                <button onClick={() => void sendToWordPress(article)}>
+                  Send to Drafts
+                </button>
               </div>
             ))}
-            {articles.length === 0 && <p>Your article library is empty.</p>}
+
+            {articles.length === 0 && (
+              <div className="empty">
+                <h4>Your library is empty</h4>
+                <p>Generate an article to see it here.</p>
+              </div>
+            )}
 
             {editingArticle && (
               <div className="editor">
                 <h3>Edit Article</h3>
-                <label>Title</label>
-                <input value={editingArticle.title} onChange={e => setEditingArticle({ ...editingArticle, title: e.target.value })} />
-                <label>Content (HTML)</label>
-                <textarea rows={18} value={editingArticle.content} onChange={e => setEditingArticle({ ...editingArticle, content: e.target.value })} />
-                <label>Meta description</label>
-                <textarea rows={3} value={editingArticle.meta_description || ""} onChange={e => setEditingArticle({ ...editingArticle, meta_description: e.target.value })} />
-                <button onClick={() => void saveArticle(editingArticle)}>Save Changes</button>
-                <button onClick={() => setEditingArticle(null)}>Cancel</button>
+
+                <label>Article Title</label>
+                <input
+                  value={editingArticle.title}
+                  onChange={e =>
+                    setEditingArticle({
+                      ...editingArticle,
+                      title: e.target.value
+                    })
+                  }
+                />
+
+                <label>Article Content</label>
+                <textarea
+                  rows={18}
+                  value={editingArticle.content}
+                  onChange={e =>
+                    setEditingArticle({
+                      ...editingArticle,
+                      content: e.target.value
+                    })
+                  }
+                />
+
+                <label>Meta Description</label>
+                <textarea
+                  rows={3}
+                  value={editingArticle.meta_description || ""}
+                  onChange={e =>
+                    setEditingArticle({
+                      ...editingArticle,
+                      meta_description: e.target.value
+                    })
+                  }
+                />
+
+                <button onClick={() => void saveArticle(editingArticle)}>
+                  Save Changes
+                </button>
+
+                <button onClick={() => setEditingArticle(null)}>
+                  Cancel
+                </button>
               </div>
             )}
           </section>
         )}
 
-        {page === "Content Scheduler" && (
-          <section className="panel">
-            <h3>Schedule Content Generation</h3>
-            <form onSubmit={addNewSchedule} className="studio-form">
-              <label>Article topic</label>
-              <input value={scheduleTopic} onChange={e => setScheduleTopic(e.target.value)} required />
-              <label>WordPress website</label>
-              <select value={scheduleSite} onChange={e => setScheduleSite(e.target.value)} required>
-                <option value="">Select website</option>
-                {sites.map(site => (
-                  <option key={site.id} value={site.id}>{site.name}</option>
-                ))}
-              </select>
-              <label>Date and time</label>
-              <input type="datetime-local" value={scheduleDate} onChange={e => setScheduleDate(e.target.value)} required />
-              <button type="submit">Save Schedule</button>
-            </form>
+        {/* SCHEDULER */}
 
-            <h3>Scheduled Tasks</h3>
-            {schedules.map(item => (
-              <div className="list-row" key={item.id}>
-                <div className="list-info">
-                  <strong>{item.topic || item.title}</strong>
-                  <small>{item.run_at}</small>
+        {page === "Content Scheduler" && (
+          <>
+            <section className="panel">
+              <h3>Content Scheduler</h3>
+              <p>Plan your upcoming AI article generation tasks.</p>
+
+              <form onSubmit={addSchedule} className="studio-form">
+                <label>Article Topic</label>
+                <input
+                  value={scheduleTopic}
+                  onChange={e => setScheduleTopic(e.target.value)}
+                  required
+                />
+
+                <label>Destination Website</label>
+                <select
+                  value={scheduleSite}
+                  onChange={e => setScheduleSite(e.target.value)}
+                  required
+                >
+                  <option value="">Select a website</option>
+                  {sites.map(site => (
+                    <option key={site.id} value={site.id}>
+                      {site.name}
+                    </option>
+                  ))}
+                </select>
+
+                <label>Schedule Date and Time</label>
+                <input
+                  type="datetime-local"
+                  value={scheduleDate}
+                  onChange={e => setScheduleDate(e.target.value)}
+                  required
+                />
+
+                <button type="submit">Create Schedule</button>
+              </form>
+            </section>
+
+            <section className="panel">
+              <h3>Upcoming Tasks</h3>
+
+              {schedules.map(item => (
+                <div className="list-row" key={item.id}>
+                  <div className="list-info">
+                    <strong>{item.topic || item.title}</strong>
+                    <small>{item.run_at}</small>
+                  </div>
+
+                  <button onClick={() => void deleteSchedule(item.id)}>
+                    Delete
+                  </button>
                 </div>
-                <button onClick={() => void removeSchedule(item.id)}>Delete</button>
-              </div>
-            ))}
-            {schedules.length === 0 && <p>No scheduled tasks.</p>}
-          </section>
+              ))}
+
+              {schedules.length === 0 && (
+                <div className="empty">
+                  <h4>No scheduled tasks</h4>
+                  <p>Your upcoming tasks will appear here.</p>
+                </div>
+              )}
+            </section>
+          </>
         )}
 
         <footer>
-          AI Content Studio · Windows Portable Edition
+          AI Content Studio · Professional Windows Edition
         </footer>
+
       </main>
     </div>
   );
