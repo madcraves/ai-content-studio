@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build:
-    name: Build Windows Installer
+    name: Build Portable Windows App
     runs-on: windows-latest
 
     steps:
@@ -32,13 +32,25 @@ jobs:
       - name: Install Project Dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Build Windows Installer
-        run: npm run dist
+      - name: Rebuild Native Dependencies
+        run: npx electron-rebuild -f -w better-sqlite3
 
-      - name: Upload Windows Installer
+      - name: Build React Application
+        run: npm run build
+
+      - name: Build Electron TypeScript
+        run: npx tsc -p electron/tsconfig.json
+
+      - name: Create Portable Windows EXE
+        run: npm run make:portable
+
+      - name: Upload Portable Application
         uses: actions/upload-artifact@v4
         with:
-          name: AI-Content-Studio-Windows-Installer-x64
-          path: release/AI-Content-Studio-Setup-*-x64.exe
+          name: AI-Content-Studio-Portable-Windows-x64
+          path: |
+            release/**/*.exe
+            release/**/*.7z
+            release/**/*.zip
           if-no-files-found: error
           retention-days: 14
