@@ -16,13 +16,13 @@ const PROVIDERS = [
     id: "gemini",
     name: "Google Gemini",
     description: "Google's advanced AI models",
-    defaultModel: "gemini-2.0-flash"
+    defaultModel: "gemini-3.5-flash"
   },
   {
     id: "groq",
     name: "Groq",
     description: "Ultra-fast AI inference",
-    defaultModel: "llama-3.3-70b-versatile"
+    defaultModel: "openai/gpt-oss-120b"
   },
   {
     id: "openrouter",
@@ -44,8 +44,8 @@ export default function App() {
   const [online, setOnline] = useState<boolean | null>(null);
 
   const [providerModels, setProviderModels] = useState<Record<string, string>>({
-    gemini: "gemini-2.0-flash",
-    groq: "llama-3.3-70b-versatile",
+    gemini: "gemini-3.5-flash",
+    groq: "openai/gpt-oss-120b",
     openrouter: "openai/gpt-4o-mini"
   });
 
