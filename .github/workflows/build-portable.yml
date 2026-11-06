@@ -23,7 +23,6 @@ jobs:
         with:
           node-version: 22
           architecture: x64
-          cache: npm
 
       - name: Show Node and npm Versions
         run: |
