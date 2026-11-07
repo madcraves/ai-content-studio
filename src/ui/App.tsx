@@ -33,6 +33,20 @@ const PROVIDERS = [
 ];
 
 export default function App() {
+  // ------------------------------------------
+  // LICENSE STATE
+  // ------------------------------------------
+
+  const [licenseChecking, setLicenseChecking] = useState(true);
+  const [licenseStatus, setLicenseStatus] = useState<any>(null);
+  const [machineId, setMachineId] = useState("");
+  const [activationCode, setActivationCode] = useState("");
+  const [licenseLoading, setLicenseLoading] = useState(false);
+
+  // ------------------------------------------
+  // APPLICATION STATE
+  // ------------------------------------------
+
   const [page, setPage] = useState<Page>("Dashboard");
 
   const [sites, setSites] = useState<any[]>([]);
@@ -84,7 +98,61 @@ export default function App() {
     "AI Providers"
   ];
 
+  // ------------------------------------------
+  // LICENSE CHECK
+  // ------------------------------------------
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkLicense() {
+      try {
+        const [status, id] = await Promise.all([
+          studio.getLicenseStatus(),
+          studio.getMachineId()
+        ]);
+
+        if (cancelled) return;
+
+        setMachineId(id || "");
+        setLicenseStatus(status || { activated: false });
+
+        if (status?.activated) {
+          await loadData();
+          await refreshNetwork();
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setLicenseStatus({
+            activated: false,
+            message: err?.message || "Unable to check license."
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setLicenseChecking(false);
+        }
+      }
+    }
+
+    void checkLicense();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // ------------------------------------------
+  // LOAD APPLICATION DATA
+  // ------------------------------------------
+
   async function loadData() {
+    if (!licenseStatus?.activated &&
+        !licenseChecking &&
+        licenseStatus !== null) {
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -138,8 +206,56 @@ export default function App() {
     }
   }
 
+  // ------------------------------------------
+  // ACTIVATE LICENSE
+  // ------------------------------------------
+
+  async function handleActivation(e: React.FormEvent) {
+    e.preventDefault();
+
+    if (!activationCode.trim()) {
+      setError("Please enter your activation code.");
+      return;
+    }
+
+    setLicenseLoading(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const result = await studio.activateLicense(
+        activationCode.trim()
+      );
+
+      if (!result?.activated) {
+        throw new Error(
+          result?.message || "License activation failed."
+        );
+      }
+
+      setLicenseStatus(result);
+      setActivationCode("");
+
+      setMessage("License activated successfully!");
+
+      await loadData();
+      await refreshNetwork();
+
+      setPage("Dashboard");
+    } catch (err: any) {
+      setError(err?.message || "License activation failed.");
+    } finally {
+      setLicenseLoading(false);
+    }
+  }
+
+  // ------------------------------------------
+  // NETWORK MONITORING
+  // ------------------------------------------
+
   useEffect(() => {
-    void loadData();
+    if (!licenseStatus?.activated) return;
+
     void refreshNetwork();
 
     const unsubscribe = studio.onNetworkStatus?.(
@@ -155,7 +271,11 @@ export default function App() {
       window.clearInterval(timer);
       unsubscribe?.();
     };
-  }, []);
+  }, [licenseStatus?.activated]);
+
+  // ------------------------------------------
+  // NOTIFICATIONS
+  // ------------------------------------------
 
   function notify(text: string) {
     setMessage(text);
@@ -168,6 +288,10 @@ export default function App() {
     );
     setMessage("");
   }
+
+  // ------------------------------------------
+  // AI PROVIDERS
+  // ------------------------------------------
 
   async function saveProvider(providerId: string) {
     const model = providerModels[providerId];
@@ -244,6 +368,10 @@ export default function App() {
     }
   }
 
+  // ------------------------------------------
+  // WEBSITES
+  // ------------------------------------------
+
   async function addWebsite(e: React.FormEvent) {
     e.preventDefault();
 
@@ -306,6 +434,10 @@ export default function App() {
     }
   }
 
+  // ------------------------------------------
+  // ARTICLE GENERATION
+  // ------------------------------------------
+
   async function generateArticle(e: React.FormEvent) {
     e.preventDefault();
 
@@ -343,6 +475,10 @@ export default function App() {
     }
   }
 
+  // ------------------------------------------
+  // ARTICLE EDITING
+  // ------------------------------------------
+
   async function saveArticle(article: any) {
     try {
       await studio.saveEdit(article);
@@ -353,6 +489,10 @@ export default function App() {
       showError(err);
     }
   }
+
+  // ------------------------------------------
+  // WORDPRESS PUBLISHING
+  // ------------------------------------------
 
   async function sendToWordPress(article: any) {
     if (!sites.length) {
@@ -383,6 +523,10 @@ export default function App() {
       showError(err);
     }
   }
+
+  // ------------------------------------------
+  // CONTENT SCHEDULER
+  // ------------------------------------------
 
   async function addSchedule(e: React.FormEvent) {
     e.preventDefault();
@@ -417,6 +561,10 @@ export default function App() {
     }
   }
 
+  // ------------------------------------------
+  // PROVIDER STATUS
+  // ------------------------------------------
+
   function renderProviderStatus(id: string) {
     const status = providerStatus[id];
 
@@ -445,10 +593,135 @@ export default function App() {
     return <span className="disconnected">Not configured</span>;
   }
 
+  // ------------------------------------------
+  // LICENSE LOADING SCREEN
+  // ------------------------------------------
+
+  if (licenseChecking) {
+    return (
+      <div className="license-screen">
+        <div className="license-card">
+          <div className="license-logo">AI</div>
+          <h1>MadCraves AI Content Studio</h1>
+          <p>Checking your license...</p>
+          <div className="license-spinner" />
+        </div>
+      </div>
+    );
+  }
+
+  // ------------------------------------------
+  // LICENSE ACTIVATION SCREEN
+  // ------------------------------------------
+
+  if (!licenseStatus?.activated) {
+    return (
+      <div className="license-screen">
+        <div className="license-card">
+
+          <div className="license-logo">AI</div>
+
+          <div className="license-brand">
+            <strong>MadCraves</strong>
+            <span>AI CONTENT STUDIO</span>
+          </div>
+
+          <div className="license-badge">
+            <span className="status-dot offline" />
+            NOT ACTIVATED
+          </div>
+
+          <h1>Activate Your License</h1>
+
+          <p className="license-description">
+            Activate your AI Content Studio to unlock
+            your complete content management workspace.
+          </p>
+
+          <form onSubmit={handleActivation}>
+
+            <label>Your Machine ID</label>
+
+            <div className="machine-id-group">
+              <input
+                type="text"
+                value={machineId || "Unable to retrieve Machine ID"}
+                readOnly
+              />
+
+              <button
+                type="button"
+                className="copy-button"
+                disabled={!machineId}
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(machineId);
+                    notify("Machine ID copied successfully.");
+                  } catch {
+                    showError({
+                      message: "Unable to copy Machine ID. Please copy it manually."
+                    });
+                  }
+                }}
+              >
+                Copy
+              </button>
+            </div>
+
+            <label>Activation Code</label>
+
+            <textarea
+              className="activation-textarea"
+              value={activationCode}
+              onChange={e => setActivationCode(e.target.value)}
+              placeholder="Paste your activation code here..."
+              rows={5}
+              required
+            />
+
+            {error && (
+              <div className="license-error">
+                {error}
+              </div>
+            )}
+
+            {message && (
+              <div className="license-success">
+                {message}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              className="activate-button"
+              disabled={licenseLoading || !machineId}
+            >
+              {licenseLoading
+                ? "Activating License..."
+                : "ACTIVATE NOW"}
+            </button>
+
+          </form>
+
+          <div className="license-footer">
+            <span>Secure Offline License Verification</span>
+            <span>Powered by MadCraves</span>
+          </div>
+
+        </div>
+      </div>
+    );
+  }
+
+  // ------------------------------------------
+  // MAIN APPLICATION
+  // ------------------------------------------
+
   return (
     <div className="app">
 
       <aside className="sidebar">
+
         <div className="brand">
           <div className="brand-icon">AI</div>
           <div>
@@ -476,6 +749,19 @@ export default function App() {
         </nav>
 
         <div className="sidebar-bottom">
+
+          <div className="plan-card">
+            <small>LICENSE STATUS</small>
+            <strong>Activated</strong>
+            <span className="system-status">
+              <span className="status-dot" />
+              Licensed Workspace
+            </span>
+            {licenseStatus?.licensee && (
+              <small>{licenseStatus.licensee}</small>
+            )}
+          </div>
+
           <div className="plan-card">
             <small>SYSTEM CONNECTION</small>
             <strong>
@@ -498,6 +784,7 @@ export default function App() {
               <small>Local desktop account</small>
             </div>
           </div>
+
         </div>
       </aside>
 
@@ -515,10 +802,13 @@ export default function App() {
               {online === null ? "Checking" : online ? "Online" : "Offline"}
             </span>
 
-            <button className="refresh" onClick={() => {
-              void loadData();
-              void refreshNetwork();
-            }}>
+            <button
+              className="refresh"
+              onClick={() => {
+                void loadData();
+                void refreshNetwork();
+              }}
+            >
               ↻ Refresh
             </button>
           </div>
@@ -919,7 +1209,7 @@ export default function App() {
           </section>
         )}
 
-        {/* SCHEDULER */}
+        {/* CONTENT SCHEDULER */}
 
         {page === "Content Scheduler" && (
           <>
