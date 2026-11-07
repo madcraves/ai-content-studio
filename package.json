@@ -19,7 +19,8 @@
     "node-cron": "^3.0.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "zod": "^3.24.2"
+    "zod": "^3.24.2",
+    "electron-updater": "^6.6.2"
   },
   "devDependencies": {
     "@types/node": "^22.13.4",
@@ -51,7 +52,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "artifactName": "AI-Content-Studio-Setup-${version}-x64.${ext}"
@@ -65,7 +68,17 @@
       "shortcutName": "AI Content Studio"
     },
     "asar": true,
-    "asarUnpack": ["**/*.node"],
-    "npmRebuild": true
+    "asarUnpack": [
+      "**/*.node"
+    ],
+    "npmRebuild": true,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "madcraves",
+        "repo": "ai-content-studio",
+        "releaseType": "release"
+      }
+    ]
   }
 }
