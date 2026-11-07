@@ -45,6 +45,10 @@ export class Database {
     if (!articleColumns.some((column) => column.name === "featured_image_path")) {
       this.db.exec("ALTER TABLE articles ADD COLUMN featured_image_path TEXT");
     }
+    const scheduleColumns = this.db.prepare("PRAGMA table_info(schedules)").all() as any[];
+    if (!scheduleColumns.some((column) => column.name === "article_id")) {
+      this.db.exec("ALTER TABLE schedules ADD COLUMN article_id INTEGER");
+    }
   }
 
   // --------------------------------------------------
@@ -530,40 +534,40 @@ export class Database {
   // --------------------------------------------------
 
   addSchedule(item: any): any {
-    const runAt = item?.run_at ?? item?.runAt;
-
-    if (!runAt) {
-      throw new Error("Schedule date and time are required.");
+    const runAt = item?.run_at ?? item?.runAt ?? item?.scheduled_at ?? item?.scheduledAt;
+    const articleId = Number(item?.article_id ?? item?.articleId);
+    const siteId = Number(item?.site_id ?? item?.siteId);
+    if (typeof runAt !== "string" || !runAt.trim() || Number.isNaN(Date.parse(runAt.replace(" ", "T")))) {
+      throw new Error("A valid schedule date and time are required.");
     }
-
+    if (!Number.isInteger(articleId) || articleId <= 0 || !this.getArticle(articleId)) {
+      throw new Error("Select a valid generated article.");
+    }
+    if (!Number.isInteger(siteId) || siteId <= 0 || !this.getSite(siteId)) {
+      throw new Error("Select a valid connected WordPress website.");
+    }
+    const normalizedRunAt = runAt.trim().replace("T", " ").replace(/Z$/, "").replace(/\\.\\d+$/, "");
     const result = this.db.prepare(`
-      INSERT INTO schedules (
-        title,
-        topic,
-        site_id,
-        run_at,
-        enabled
-      )
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO schedules (title, topic, site_id, article_id, run_at, enabled)
+      VALUES (?, ?, ?, ?, ?, ?)
     `).run(
-      item.title ?? "",
-      item.topic ?? "",
-      item.siteId ?? item.site_id ?? null,
-      runAt,
+      String(item.title ?? item.topic ?? "Scheduled article"),
+      String(item.topic ?? item.title ?? ""),
+      siteId,
+      articleId,
+      normalizedRunAt,
       item.enabled === false ? 0 : 1
     );
-
-    return {
-      id: Number(result.lastInsertRowid),
-      success: true
-    };
+    return { id: Number(result.lastInsertRowid), success: true };
   }
 
   listSchedules(): any[] {
     return this.db.prepare(`
-      SELECT *
+      SELECT schedules.*, articles.title AS article_title, sites.name AS site_name
       FROM schedules
-      ORDER BY run_at ASC
+      LEFT JOIN articles ON articles.id = schedules.article_id
+      LEFT JOIN sites ON sites.id = schedules.site_id
+      ORDER BY schedules.run_at ASC
     `).all() as any[];
   }
 
