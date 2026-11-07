@@ -653,7 +653,7 @@ export async function reviseArticleWithAI(
   if (!instructions?.trim()) {
     throw new Error("Enter custom instructions for the article revision.");
   }
-  const plainText = String(article.content).replace(/<[^>]*>/g, " ").replace(/\\s+/g, " ").trim();
+  const plainText = String(article.content).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
   const estimatedWords = plainText ? plainText.split(" ").length : 2000;
   const revisionInput: GenerationInput = {
     topic: String(article.title),
