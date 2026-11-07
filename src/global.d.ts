@@ -78,6 +78,7 @@ declare global {
     generate: (input: any) => Promise<any>;
     publish: (input: any) => Promise<any>;
     saveEdit: (article: Partial<Article>) => Promise<any>;
+    aiEditArticle: (input: { articleId: number; instructions: string; providerId: string }) => Promise<any>;
 
     addSchedule: (item: Partial<Schedule>) => Promise<any>;
     listSchedules: () => Promise<Schedule[]>;
