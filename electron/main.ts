@@ -11,10 +11,12 @@ import fs from "node:fs";
 
 import { Database } from "./services/database";
 import { runParallelGeneration } from "./services/generation";
+
 import {
   publishDraft,
   testWordPressConnection,
 } from "./services/wordpress";
+
 import { startScheduler } from "./services/scheduler";
 
 import {
@@ -71,9 +73,7 @@ function requireValidLicense(): void {
   }
 }
 
-ipcMain.handle("license:machine-id", () => {
-  return getMachineId();
-});
+ipcMain.handle("license:machine-id", () => getMachineId());
 
 ipcMain.handle("license:status", () => {
   return getLicenseStatus(licenseFile());
@@ -118,9 +118,7 @@ function decryptApiKey(provider: any): any {
 
   const apiKey =
     provider.encrypted && safeStorage.isEncryptionAvailable()
-      ? safeStorage.decryptString(
-          Buffer.from(storedKey, "base64")
-        )
+      ? safeStorage.decryptString(Buffer.from(storedKey, "base64"))
       : Buffer.from(storedKey, "base64").toString("utf8");
 
   return {
@@ -159,12 +157,7 @@ function getBuiltinProviders() {
       apiKey: API_KEYS.openrouter,
       enabled: true,
     },
-  ].filter((provider) => {
-    return Boolean(
-      provider.apiKey &&
-      provider.apiKey.trim()
-    );
-  });
+  ].filter((provider) => Boolean(provider.apiKey?.trim()));
 }
 
 function getProviderById(providerId: string) {
@@ -260,12 +253,11 @@ async function testAIProvider(providerId: string) {
     const data: any = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      const apiMessage =
+      throw new Error(
         data?.error?.message ||
         data?.message ||
-        `HTTP ${response.status}`;
-
-      throw new Error(apiMessage);
+        `HTTP ${response.status}`
+      );
     }
 
     return {
@@ -277,9 +269,7 @@ async function testAIProvider(providerId: string) {
     };
   } catch (error: any) {
     if (error?.name === "AbortError") {
-      throw new Error(
-        `${provider.name} connection timed out.`
-      );
+      throw new Error(`${provider.name} connection timed out.`);
     }
 
     throw new Error(
@@ -346,9 +336,7 @@ function getNetworkStatus() {
   };
 }
 
-ipcMain.handle("network:status", () => {
-  return getNetworkStatus();
-});
+ipcMain.handle("network:status", () => getNetworkStatus());
 
 function startNetworkMonitoring() {
   if (networkTimer) {
@@ -386,7 +374,6 @@ app.whenReady().then(() => {
 
   startNetworkMonitoring();
 
-  // Scheduler uses built-in providers.
   startScheduler(db, async (scheduleId: number) => {
     requireValidLicense();
 
@@ -419,16 +406,9 @@ app.whenReady().then(() => {
 
       db.saveGenerationResults(jobId, results);
 
-      win?.webContents.send(
-        "job:scheduled",
-        scheduleId
-      );
+      win?.webContents.send("job:scheduled", scheduleId);
     } catch (error: any) {
-      db.failJob(
-        jobId,
-        error?.message || String(error)
-      );
-
+      db.failJob(jobId, error?.message || String(error));
       throw error;
     }
   });
@@ -469,7 +449,6 @@ app.on("before-quit", () => {
 
 ipcMain.handle("dashboard:get", () => {
   requireValidLicense();
-
   return db.dashboard();
 });
 
@@ -479,19 +458,16 @@ ipcMain.handle("dashboard:get", () => {
 
 ipcMain.handle("sites:list", () => {
   requireValidLicense();
-
   return db.listSites();
 });
 
 ipcMain.handle("sites:add", (_event, site) => {
   requireValidLicense();
-
   return db.addSite(site);
 });
 
 ipcMain.handle("sites:delete", (_event, id: number) => {
   requireValidLicense();
-
   return db.deleteSite(id);
 });
 
@@ -508,17 +484,17 @@ ipcMain.handle(
 
     const result = await testWordPressConnection(site);
 
-    if (result?.success || result?.success) {
-      return {
-        ...result,
-        ok: true,
-        success: true,
-      };
+    if (!result.success) {
+      throw new Error(
+        result.message || "WordPress connection failed."
+      );
     }
 
-    throw new Error(
-      result?.message || "WordPress connection failed."
-    );
+    return {
+      ...result,
+      ok: true,
+      success: true,
+    };
   }
 );
 
@@ -532,7 +508,7 @@ ipcMain.handle("providers:save", (_event, provider) => {
   const apiKey =
     provider.apiKey ?? provider.api_key ?? "";
 
-  if (!apiKey.trim()) {
+  if (typeof apiKey !== "string" || !apiKey.trim()) {
     throw new Error("API key cannot be empty.");
   }
 
@@ -565,7 +541,6 @@ ipcMain.handle("providers:list", () => {
 
 ipcMain.handle("articles:list", () => {
   requireValidLicense();
-
   return db.listArticles();
 });
 
@@ -612,11 +587,7 @@ ipcMain.handle(
         results,
       };
     } catch (error: any) {
-      db.failJob(
-        jobId,
-        error?.message || "Generation failed"
-      );
-
+      db.failJob(jobId, error?.message || "Generation failed");
       throw error;
     }
   }
@@ -658,14 +629,10 @@ ipcMain.handle(
 // ARTICLE EDITING
 // --------------------------------------------------
 
-ipcMain.handle(
-  "articles:save-edit",
-  (_event, article) => {
-    requireValidLicense();
-
-    return db.updateArticle(article);
-  }
-);
+ipcMain.handle("articles:save-edit", (_event, article) => {
+  requireValidLicense();
+  return db.updateArticle(article);
+});
 
 // --------------------------------------------------
 // CONTENT SCHEDULING
@@ -673,24 +640,18 @@ ipcMain.handle(
 
 ipcMain.handle("schedule:add", (_event, item) => {
   requireValidLicense();
-
   return db.addSchedule(item);
 });
 
 ipcMain.handle("schedule:list", () => {
   requireValidLicense();
-
   return db.listSchedules();
 });
 
-ipcMain.handle(
-  "schedule:delete",
-  (_event, id: number) => {
-    requireValidLicense();
-
-    return db.deleteSchedule(id);
-  }
-);
+ipcMain.handle("schedule:delete", (_event, id: number) => {
+  requireValidLicense();
+  return db.deleteSchedule(id);
+});
 
 // --------------------------------------------------
 // IMAGE GENERATION
@@ -701,7 +662,6 @@ ipcMain.handle("images:generate", async () => {
 
   return {
     ok: false,
-    message:
-      "Image generation adapter is not implemented yet.",
+    message: "Image generation adapter is not implemented yet.",
   };
 });
