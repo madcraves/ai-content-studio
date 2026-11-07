@@ -1514,10 +1514,8 @@ function App() {
                         <div>
                           <strong>{item.title || item.topic || "Scheduled article"}</strong>
                           <small>
-                            {item.keyword || "No keyword"} ·{" "}
-                            {formatDate(
-                              item.scheduled_at || item.scheduledAt
-                            )}
+                            {item.article_title || "Selected article"} · {item.site_name || "Selected website"} ·{" "}
+                            {formatDate(item.run_at || item.scheduled_at || item.scheduledAt)}
                           </small>
                         </div>
 
