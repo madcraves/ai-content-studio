@@ -822,7 +822,7 @@ ipcMain.handle("images:search", async (_event, input) => {
   async function searchOpenverse(item: { query: string; section: string }) {
     const params = new URLSearchParams({
       q: item.query,
-      page_size: "30",
+      page_size: "20",
       license: "cc0,by,by-sa,pdm",
       mature: "false",
     });
@@ -845,14 +845,14 @@ ipcMain.handle("images:search", async (_event, input) => {
       provider: "Openverse",
     })).filter((image: any) => image.imageUrl.startsWith("https://")
       && image.thumbnailUrl.startsWith("https://") && image.sourceUrl.startsWith("https://")
-      && image.width >= 600 && image.height >= 350
+      && ((image.width >= 300 && image.height >= 200) || (image.width >= 200 && image.height >= 300))
       && /^(CC0|BY|BY-SA|PDM)$/i.test(image.license));
   }
 
   async function searchCommons(item: { query: string; section: string }) {
     const params = new URLSearchParams({
       action: "query", format: "json", generator: "search", gsrnamespace: "6",
-      gsrsearch: item.query, gsrlimit: "15", prop: "imageinfo",
+      gsrsearch: `${item.query} filetype:bitmap`, gsrlimit: "15", prop: "imageinfo",
       iiprop: "url|extmetadata", iiurlwidth: "1200",
     });
     const data = await requestJson("https://commons.wikimedia.org/w/api.php?" + params.toString());
@@ -879,20 +879,25 @@ ipcMain.handle("images:search", async (_event, input) => {
       };
     }).filter((image: any) => image.imageUrl.startsWith("https://")
       && image.thumbnailUrl.startsWith("https://") && image.sourceUrl.startsWith("https://")
-      && image.width >= 600 && image.height >= 350
+      && ((image.width >= 300 && image.height >= 200) || (image.width >= 200 && image.height >= 300))
       && /^(CC0|CC BY|CC BY-SA|Public domain)/i.test(image.license));
   }
 
   // Search both free image indexes for every topic, rather than using Commons only
   // when Openverse fails. This substantially broadens results for each search.
+  const providerErrors: string[] = [];
   const batches = await Promise.all(queries.map(async (item) => {
     const [openverseResults, commonsResults] = await Promise.all([
       searchOpenverse(item).catch((error) => {
-        console.warn(`[Image Search] Openverse failed ("${item.query}"): ${error instanceof Error ? error.message : String(error)}`);
+        const message = error instanceof Error ? error.message : String(error);
+        providerErrors.push(`Openverse: ${message}`);
+        console.warn(`[Image Search] Openverse failed ("${item.query}"): ${message}`);
         return [];
       }),
       searchCommons(item).catch((error) => {
-        console.warn(`[Image Search] Wikimedia Commons failed ("${item.query}"): ${error instanceof Error ? error.message : String(error)}`);
+        const message = error instanceof Error ? error.message : String(error);
+        providerErrors.push(`Wikimedia Commons: ${message}`);
+        console.warn(`[Image Search] Wikimedia Commons failed ("${item.query}"): ${message}`);
         return [];
       }),
     ]);
@@ -901,11 +906,14 @@ ipcMain.handle("images:search", async (_event, input) => {
 
   const unique = new Map<string, any>();
   for (const image of batches.flat()) {
-    if (!unique.has(image.imageUrl)) unique.set(image.imageUrl, image);
+    if (image.imageUrl && !unique.has(image.imageUrl)) unique.set(image.imageUrl, image);
   }
   const results = [...unique.values()].slice(0, 60);
   if (!results.length) {
-    throw new Error("No free, reusable images were returned. Try a shorter or more specific custom search phrase, and check your internet connection.");
+    const providerDetail = [...new Set(providerErrors)].slice(0, 4).join(" | ");
+    throw new Error(providerDetail
+      ? `Image providers could not return results. ${providerDetail}. Check your internet connection or try again later.`
+      : "The image libraries returned no matching images under the selected free-use licenses. Try a shorter or broader search phrase.");
   }
   return {
     ok: true,
