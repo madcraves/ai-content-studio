@@ -11,7 +11,7 @@ import path from "node:path";
 import fs from "node:fs";
 
 import { Database } from "./services/database";
-import { runParallelGeneration, runMultiAgentGeneration } from "./services/generation";
+import { runParallelGeneration, runMultiAgentGeneration, reviseArticleWithAI } from "./services/generation";
 
 import {
   publishDraft,
@@ -596,6 +596,33 @@ ipcMain.handle("articles:delete", (_event, articleId: number) => {
     catch (error) { console.warn("Could not remove the article's featured image:", error); }
   }
   return { ok: true, deleted: result.changes > 0 };
+});
+
+ipcMain.handle("articles:ai-edit", async (_event, input) => {
+  requireValidLicense();
+  const articleId = Number(input?.articleId);
+  if (!Number.isInteger(articleId) || articleId <= 0) throw new Error("A valid article ID is required.");
+  const instructions = typeof input?.instructions === "string" ? input.instructions.trim() : "";
+  if (!instructions) throw new Error("Enter custom instructions for the article revision.");
+  if (instructions.length > 10000) throw new Error("Custom instructions must be 10,000 characters or fewer.");
+  const article = db.getArticle(articleId);
+  if (!article) throw new Error("Article not found.");
+  const providerId = String(input?.providerId || "");
+  const provider = getBuiltinProviders().find((item) => item.id === providerId && item.enabled !== false && Boolean(item.apiKey?.trim()));
+  if (!provider) throw new Error("Select an enabled AI provider with a saved API key.");
+  const revised = await reviseArticleWithAI(article, instructions, provider);
+  db.updateArticle({
+    id: articleId,
+    title: revised.title,
+    content: revised.content,
+    excerpt: revised.excerpt,
+    slug: revised.slug,
+    metaTitle: revised.metaTitle,
+    metaDescription: revised.metaDescription,
+    focusKeyword: article.focus_keyword || article.focusKeyword || revised.keywords?.[0] || "",
+    keywords: revised.keywords,
+  });
+  return { ok: true, article: db.getArticle(articleId) };
 });
 
 ipcMain.handle(
