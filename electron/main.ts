@@ -746,7 +746,8 @@ ipcMain.handle("schedule:delete", (_event, id: number) => {
 
 const IMAGE_PROVIDER_DEFINITIONS: Record<string, { name: string; model: string }> = {
   "image-openai": { name: "OpenAI Images", model: "gpt-image-1" },
-  "image-imagen": { name: "Google Imagen", model: "imagen-4.0-generate-001" },
+  // Keep the existing provider ID so saved API keys continue working after the Imagen migration.
+  "image-imagen": { name: "Google Nano Banana 2", model: "gemini-3.1-flash-image" },
 };
 
 function getSavedImageProvider(providerId: string) {
@@ -831,17 +832,33 @@ ipcMain.handle("images:generate", async (_event, input) => {
       if (!response.ok) throw new Error(data?.error?.message || `OpenAI Images returned HTTP ${response.status}.`);
       imageBase64 = data?.data?.[0]?.b64_json || "";
     } else {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${definition.model}:predict?key=${encodeURIComponent(provider.apiKey)}`;
+      // Gemini Nano Banana image models use generateContent, not Imagen's predict endpoint.
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${definition.model}:generateContent?key=${encodeURIComponent(provider.apiKey)}`;
       response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
-        body: JSON.stringify({ instances: [{ prompt }], parameters: { sampleCount: 1, aspectRatio: "16:9" } }),
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseModalities: ["TEXT", "IMAGE"],
+            imageConfig: { aspectRatio: "16:9", imageSize: "1K" },
+          },
+        }),
       });
       data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data?.error?.message || `Google Imagen returned HTTP ${response.status}.`);
-      imageBase64 = data?.predictions?.[0]?.bytesBase64Encoded || "";
-      mimeType = data?.predictions?.[0]?.mimeType || "image/png";
+      if (!response.ok) {
+        const detail = data?.error?.message || `Google Nano Banana returned HTTP ${response.status}.`;
+        throw new Error(detail);
+      }
+      const parts = data?.candidates?.flatMap((candidate: any) => candidate?.content?.parts || []) || [];
+      const imagePart = parts.find((part: any) => part?.inlineData?.data || part?.inline_data?.data);
+      imageBase64 = imagePart?.inlineData?.data || imagePart?.inline_data?.data || "";
+      mimeType = imagePart?.inlineData?.mimeType || imagePart?.inline_data?.mime_type || "image/png";
+      if (!imageBase64) {
+        const providerText = parts.map((part: any) => part?.text).filter(Boolean).join(" ").trim();
+        throw new Error(providerText || "Google Nano Banana returned no image. Check that your API key has access to Gemini image generation.");
+      }
     }
     if (!imageBase64) throw new Error("The image provider returned no image data.");
 
