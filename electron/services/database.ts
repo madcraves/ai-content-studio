@@ -16,10 +16,34 @@ export class Database {
     this.db.pragma("foreign_keys = ON");
     this.db.pragma("busy_timeout = 5000");
 
+    // Keep a rolling pre-migration backup so app updates never overwrite user content.
+    if (fs.existsSync(databasePath) && fs.statSync(databasePath).size > 0) {
+      try {
+        this.db.pragma("wal_checkpoint(FULL)");
+        const backupDir = path.join(directory, "backups");
+        fs.mkdirSync(backupDir, { recursive: true });
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+        fs.copyFileSync(databasePath, path.join(backupDir, `studio-${stamp}.sqlite`));
+        const backups = fs.readdirSync(backupDir)
+          .filter((name) => name.endsWith(".sqlite"))
+          .sort()
+          .reverse();
+        for (const oldBackup of backups.slice(5)) {
+          fs.unlinkSync(path.join(backupDir, oldBackup));
+        }
+      } catch (backupError) {
+        console.warn("Could not create the pre-update database backup:", backupError);
+      }
+    }
+
     this.initialize();
     const providerColumns = this.db.prepare("PRAGMA table_info(providers)").all() as any[];
     if (!providerColumns.some((column) => column.name === "base_url")) {
       this.db.exec("ALTER TABLE providers ADD COLUMN base_url TEXT");
+    }
+    const articleColumns = this.db.prepare("PRAGMA table_info(articles)").all() as any[];
+    if (!articleColumns.some((column) => column.name === "featured_image_path")) {
+      this.db.exec("ALTER TABLE articles ADD COLUMN featured_image_path TEXT");
     }
   }
 
@@ -323,6 +347,12 @@ export class Database {
     return this.db
       .prepare("SELECT * FROM articles WHERE id = ?")
       .get(id) as any;
+  }
+
+  setArticleImage(id: number, imagePath: string): any {
+    return this.db.prepare(
+      "UPDATE articles SET featured_image_path = ? WHERE id = ?"
+    ).run(imagePath, id);
   }
 
   // --------------------------------------------------
