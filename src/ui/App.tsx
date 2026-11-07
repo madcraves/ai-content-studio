@@ -399,6 +399,7 @@ function App() {
         throw new Error(result?.message || "Article generation failed.");
       }
 
+      await loadData(true);
       const savedArticles = await studio.listArticles();
       const generated = Array.isArray(savedArticles) ? savedArticles.filter((item: any) => Number(item.job_id) === Number(result?.jobId)) : [];
       setArticles(Array.isArray(savedArticles) ? savedArticles : []);
@@ -455,6 +456,10 @@ function App() {
 
     try {
       await studio.saveEdit(editingArticle);
+      if (Number(generatedArticle?.id) === Number(editingArticle.id)) {
+        setGeneratedArticle({ ...editingArticle });
+        setGeneratedOptions((items) => items.map((item) => Number(item.id) === Number(editingArticle.id) ? { ...editingArticle } : item));
+      }
       setEditingArticle(null);
       await loadData(true);
       notify("Article updated successfully.");
@@ -940,7 +945,7 @@ function App() {
                         <p className="generated-excerpt">{generatedArticle.excerpt || "No excerpt returned by the provider."}</p>
                         <iframe className="article-preview-frame" title="Generated article preview" sandbox="" srcDoc={String(generatedArticle.content || "")} />
                         <div className="generated-actions">
-                          <button type="button" className="secondary-button" onClick={() => setEditingArticle({ ...generatedArticle })}>Edit Article</button>
+                          <button type="button" className="secondary-button" onClick={() => { setEditingArticle({ ...generatedArticle }); setPage("Article Library"); }}>Edit Article</button>
                           <button type="button" className="text-button" onClick={() => setPage("Article Library")}>Open Article Library →</button>
                         </div>
                       </>
