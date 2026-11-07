@@ -169,8 +169,8 @@ export async function publishDraft(site: WordPressSite, article: Article) {
       const host = parsed.hostname.toLowerCase();
       if (parsed.protocol !== "https:" || !host || host === "localhost"
         || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")
-        || /^127\\./.test(host) || /^10\\./.test(host) || /^192\\.168\\./.test(host)
-        || /^169\\.254\\./.test(host) || /^172\\.(1[6-9]|2\\d|3[01])\\./.test(host)
+        || /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host)
+        || /^169\.254\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host)
         || host === "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80:")) return false;
       return true;
     } catch { return false; }
