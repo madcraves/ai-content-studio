@@ -88,6 +88,7 @@ function App() {
   const [imageLoading, setImageLoading] = useState(false);
   const [imageResults, setImageResults] = useState<any[]>([]);
   const [imageSearchQueries, setImageSearchQueries] = useState<string[]>([]);
+  const [customImageSearch, setCustomImageSearch] = useState("");
   const [featuredImage, setFeaturedImage] = useState<any>(null);
   const [selectedInlineImageIds, setSelectedInlineImageIds] = useState<string[]>([]);
   const [imageSectionFocus, setImageSectionFocus] = useState(false);
@@ -568,7 +569,7 @@ function App() {
     await searchArticleImages(article);
   }
 
-  async function searchArticleImages(articleOverride?: any) {
+  async function searchArticleImages(articleOverride?: any, customQuery = customImageSearch) {
     const article = articleOverride || generatedArticle;
     if (!article?.id) {
       notify("Select a saved article before searching for images.", true);
@@ -580,7 +581,7 @@ function App() {
     setFeaturedImage(null);
     setSelectedInlineImageIds([]);
     try {
-      const result = await studio.searchArticleImages({ articleId: Number(article.id) });
+      const result = await studio.searchArticleImages({ articleId: Number(article.id), customQuery: customQuery.trim() });
       if (!result?.ok) throw new Error(result?.message || "Image search could not be completed.");
       setImageResults(Array.isArray(result.results) ? result.results : []);
       setImageSearchQueries(Array.isArray(result.queries) ? result.queries : []);
@@ -1529,13 +1530,30 @@ function App() {
                         {articles.map((item: any) => <option key={item.id} value={String(item.id)}>{item.title || "Untitled article"}</option>)}
                       </select>
                     </div>
+                    <div className="form-group custom-image-search-group">
+                      <label htmlFor="custom-image-search">Custom Image Search</label>
+                      <input
+                        id="custom-image-search"
+                        type="search"
+                        value={customImageSearch}
+                        onChange={(event) => setCustomImageSearch(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" && generatedArticle?.id && !imageLoading) {
+                            event.preventDefault();
+                            void searchArticleImages(undefined, customImageSearch);
+                          }
+                        }}
+                        placeholder="e.g. Kaaba at night, modern office interior, healthy breakfast"
+                      />
+                      <small>Enter any subject, place, object or visual style. Leave empty to use article topics.</small>
+                    </div>
                     <div className="image-search-summary">
-                      <strong>AI context-aware search</strong>
-                      <span>Uses the article title, focus keyword and section headings to discover relevant photography.</span>
+                      <strong>Search across free image libraries</strong>
+                      <span>Checks multiple free image libraries using your custom search and the article context.</span>
                       {imageSearchQueries.length > 0 && <small>Search topics: {imageSearchQueries.join(" · ")}</small>}
                     </div>
                     <button type="button" className="primary-button" disabled={!generatedArticle?.id || imageLoading} onClick={() => void searchArticleImages()}>
-                      {imageLoading ? <><span className="button-spinner" /> Searching free image sources...</> : "⌕ Search Article Images"}
+                      {imageLoading ? <><span className="button-spinner" /> Searching free image sources...</> : "⌕ Search Images"}
                     </button>
                     <div className="image-selection-status">
                       <span>Featured image: <b>{featuredImage ? "Selected" : "Not selected"}</b></span>
