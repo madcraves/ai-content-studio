@@ -29,7 +29,11 @@ jobs:
           node --version
           npm --version
 
-      - name: Set release version\n        shell: bash\n        run: npm version 1.0.${{ github.run_number }} --no-git-tag-version\n\n      - name: Install Project Dependencies
+      - name: Set release version
+        shell: bash
+        run: npm version 1.0.${{ github.run_number }} --no-git-tag-version
+
+      - name: Install Project Dependencies
         run: npm install --no-audit --no-fund
 
       - name: Rebuild Native Dependencies
