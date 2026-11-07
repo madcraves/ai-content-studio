@@ -82,16 +82,14 @@ function App() {
 
   const [sites, setSites] = useState<any[]>([]);
   const [providers, setProviders] = useState<any[]>([]);
-  const [imageProviders, setImageProviders] = useState<any[]>([]);
   const [articles, setArticles] = useState<any[]>([]);
   const [deletingArticleId, setDeletingArticleId] = useState<number | null>(null);
   const [selectedArticleProvider, setSelectedArticleProvider] = useState("all");
-  const [imageApiKeyInputs, setImageApiKeyInputs] = useState<Record<string, string>>({});
-  const [imageProviderSaving, setImageProviderSaving] = useState<string | null>(null);
-  const [selectedImageProvider, setSelectedImageProvider] = useState("image-openai");
-  const [imagePrompt, setImagePrompt] = useState("");
   const [imageLoading, setImageLoading] = useState(false);
-  const [generatedImage, setGeneratedImage] = useState("");
+  const [imageResults, setImageResults] = useState<any[]>([]);
+  const [imageSearchQueries, setImageSearchQueries] = useState<string[]>([]);
+  const [featuredImage, setFeaturedImage] = useState<any>(null);
+  const [selectedInlineImageIds, setSelectedInlineImageIds] = useState<string[]>([]);
   const [imageSectionFocus, setImageSectionFocus] = useState(false);
   const [previewArticle, setPreviewArticle] = useState<any>(null);
   const [previewImage, setPreviewImage] = useState("");
@@ -179,14 +177,12 @@ function App() {
         dashboardData,
         siteData,
         providerData,
-        imageProviderData,
         articleData,
         scheduleData,
       ] = await Promise.all([
         studio.dashboard(),
         studio.listSites(),
         studio.listProviders(),
-        studio.listImageProviders(),
         studio.listArticles(),
         studio.listSchedules(),
       ]);
@@ -194,7 +190,6 @@ function App() {
       setStats(dashboardData || {});
       setSites(Array.isArray(siteData) ? siteData : []);
       setProviders(Array.isArray(providerData) ? providerData : []);
-      setImageProviders(Array.isArray(imageProviderData) ? imageProviderData : []);
       if (selectedArticleProvider !== "all" && Array.isArray(providerData) && providerData.length && !providerData.some((item: any) => item.id === selectedArticleProvider)) {
         setSelectedArticleProvider(providerData.find((item: any) => item.configured)?.id || providerData[0].id);
       }
@@ -495,8 +490,9 @@ function App() {
       if (Number(previewArticle?.id) === Number(article.id)) { setPreviewArticle(null); setPreviewImage(""); }
       if (Number(generatedArticle?.id) === Number(article.id)) {
         setGeneratedArticle(null);
-        setGeneratedImage("");
-        setImagePrompt("");
+        setFeaturedImage(null);
+        setImageResults([]);
+        setSelectedInlineImageIds([]);
       }
       await loadData(true);
       notify("Article deleted successfully.");
@@ -561,58 +557,105 @@ function App() {
     }
   }
 
-  async function saveImageProvider(provider: any) {
-    clearNotifications();
-    const apiKey = imageApiKeyInputs[provider.id]?.trim();
-    if (!apiKey) {
-      notify(`Enter your ${provider.name} API key first.`, true);
-      return;
-    }
-    setImageProviderSaving(provider.id);
-    try {
-      await studio.saveImageProvider({ providerId: provider.id, apiKey });
-      setImageApiKeyInputs((current) => ({ ...current, [provider.id]: "" }));
-      const refreshed = await studio.listImageProviders();
-      setImageProviders(Array.isArray(refreshed) ? refreshed : []);
-      notify(`${provider.name} API key saved securely.`);
-    } catch (err: any) {
-      notify(err?.message || `Unable to save ${provider.name} API key.`, true);
-    } finally {
-      setImageProviderSaving(null);
-    }
-  }
-
   async function startImageForArticle(article: any) {
     if (!article?.id) return;
-    const articlePrompt = `Create a professional, original, high-quality editorial featured image for this blog article: ${article.title || "Blog article"}. Visual context: ${String(article.content || "").replace(/<[^>]*>/g, " ").slice(0, 1200)}. No text, no watermark, wide landscape composition.`;
     setGeneratedArticle(article);
-    setImagePrompt(articlePrompt);
-    setGeneratedImage("");
+    setImageResults([]);
+    setFeaturedImage(null);
+    setSelectedInlineImageIds([]);
     setPage("Article Library");
     setImageSectionFocus(true);
-    await generateFeaturedImage(article, articlePrompt);
+    await searchArticleImages(article);
   }
 
-  async function generateFeaturedImage(articleOverride?: any, promptOverride?: string) {
+  async function searchArticleImages(articleOverride?: any) {
     const article = articleOverride || generatedArticle;
     if (!article?.id) {
-      notify("Select an article first, then create its featured image.", true);
+      notify("Select a saved article before searching for images.", true);
       return;
     }
     clearNotifications();
     setImageLoading(true);
+    setImageResults([]);
+    setFeaturedImage(null);
+    setSelectedInlineImageIds([]);
     try {
-      const result = await studio.generateImage({
-        articleId: Number(article.id),
-        providerId: selectedImageProvider,
-        prompt: (promptOverride || imagePrompt).trim() || article.title,
-      });
-      if (!result?.ok || !result?.imageDataUrl) throw new Error(result?.message || "Image generation failed.");
-      setGeneratedImage(result.imageDataUrl);
-      await loadData(true);
-      notify("Featured image generated and saved with your article.");
+      const result = await studio.searchArticleImages({ articleId: Number(article.id) });
+      if (!result?.ok) throw new Error(result?.message || "Image search could not be completed.");
+      setImageResults(Array.isArray(result.results) ? result.results : []);
+      setImageSearchQueries(Array.isArray(result.queries) ? result.queries : []);
+      if (!result.results?.length) notify("No suitable Wikimedia Commons images were found. Try a more descriptive article title.", true);
+      else notify(`Found ${result.results.length} relevant images. Choose one featured image and four in-article images.`);
     } catch (err: any) {
-      notify(err?.message || "Image generation failed.", true);
+      notify(err?.message || "Article image search failed.", true);
+    } finally {
+      setImageLoading(false);
+    }
+  }
+
+  function toggleInlineImage(image: any) {
+    setSelectedInlineImageIds((current) => current.includes(image.id)
+      ? current.filter((id) => id !== image.id)
+      : current.length >= 4 ? current : [...current, image.id]);
+  }
+
+  function escapeImageHtml(value: string) {
+    return String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  async function applyArticleImages() {
+    if (!generatedArticle?.id) return;
+    if (!featuredImage) {
+      notify("Choose a featured image first.", true);
+      return;
+    }
+    if (selectedInlineImageIds.length !== 4) {
+      notify("Please select exactly four images for the article body.", true);
+      return;
+    }
+    const inlineImages = selectedInlineImageIds.map((id) => imageResults.find((image) => image.id === id)).filter(Boolean);
+    if (inlineImages.length !== 4) {
+      notify("One or more selected images are no longer available. Search again.", true);
+      return;
+    }
+    setImageLoading(true);
+    try {
+      const article = articles.find((item: any) => Number(item.id) === Number(generatedArticle.id)) || generatedArticle;
+      const featuredMeta = {
+        url: featuredImage.imageUrl,
+        alt: featuredImage.description || article.title,
+        sourceUrl: featuredImage.sourceUrl,
+        artist: featuredImage.artist,
+        license: featuredImage.license,
+        attribution: featuredImage.attribution,
+      };
+      let content = String(article.content || "").replace(/<!--\s*MADCRAVES_FEATURED_IMAGE:[\s\S]*?-->/i, "");
+      content = `<!-- MADCRAVES_FEATURED_IMAGE:${encodeURIComponent(JSON.stringify(featuredMeta))} -->\n` + content;
+      const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      for (const image of inlineImages) {
+        const alt = escapeImageHtml(image.description || image.title || article.title);
+        const caption = `Image: ${escapeImageHtml(image.artist || "Unknown creator")} · ${escapeImageHtml(image.license || "License not specified")} · <a href="${escapeImageHtml(image.sourceUrl)}" target="_blank" rel="noopener">Source</a>`;
+        const figure = `<figure class="wp-block-image"><img src="${escapeImageHtml(image.imageUrl)}" alt="${alt}" loading="lazy" /><figcaption class="wp-element-caption">${caption}</figcaption></figure>`;
+        const heading = String(image.section || "").trim();
+        let inserted = false;
+        if (heading && heading !== "Featured / overall topic") {
+          const pattern = new RegExp(`(<h[2-3][^>]*>[\\s\\S]*?${escapeRegExp(heading)}[\\s\\S]*?<\\/h[2-3]>)`, "i");
+          if (pattern.test(content)) {
+            content = content.replace(pattern, `$1\n${figure}`);
+            inserted = true;
+          }
+        }
+        if (!inserted) content += `\n${figure}`;
+      }
+      const saved = await studio.saveEdit({ ...article, content });
+      if (saved?.changes === 0) throw new Error("The article image selection could not be saved.");
+      const updated = { ...article, content };
+      setGeneratedArticle(updated);
+      setArticles((current) => current.map((item: any) => Number(item.id) === Number(updated.id) ? updated : item));
+      setPreviewImage(featuredImage.thumbnailUrl || featuredImage.imageUrl);
+      notify("Featured image and four in-article images saved. They will be uploaded to WordPress Media Library when you send the draft.");
+    } catch (err: any) {
+      notify(err?.message || "Unable to save selected article images.", true);
     } finally {
       setImageLoading(false);
     }
@@ -1243,7 +1286,7 @@ function App() {
 
               {generatedArticle && (
                 <section className="panel generation-success-panel">
-                  <div><span className="connected">Article generated and saved</span><h3>{generatedArticle.title || "Your article is ready"}</h3><p>Your content is available in Article Library. You can review, edit, publish or create a featured image from there.</p></div>
+                  <div><span className="connected">Article generated and saved</span><h3>{generatedArticle.title || "Your article is ready"}</h3><p>Your content is available in Article Library. You can review, edit, publish or find article-related images from there.</p></div>
                   <button type="button" className="primary-button" onClick={() => setPage("Article Library")}>Open Article Library →</button>
                 </section>
               )}
@@ -1436,7 +1479,7 @@ function App() {
                           AI Edit
                         </button>
                         <button type="button" className="secondary-button" disabled={imageLoading} onClick={() => void startImageForArticle(article)}>
-                          {imageLoading && Number(generatedArticle?.id) === Number(article.id) ? "Generating image..." : "Generate Blog Image"}
+                          {imageLoading && Number(generatedArticle?.id) === Number(article.id) ? "Searching images..." : "Find Article Images"}
                         </button>
 
                         <button
@@ -1462,43 +1505,67 @@ function App() {
               )}
               <section className="panel image-studio-section" id="image-generation-section">
                 <div className="panel-heading">
-                  <div><span className="eyebrow-light">VISUAL CONTENT WORKSPACE</span><h3>Image Generation Studio</h3><p>Create a blog-specific featured image using OpenAI Images or Google Nano Banana 2.</p></div>
-                  <span className={imageProviders.some((item: any) => item.id === selectedImageProvider && item.configured) ? "connected" : "coming-soon-label"}>{imageProviders.some((item: any) => item.id === selectedImageProvider && item.configured) ? "API ready" : "API setup needed"}</span>
+                  <div><span className="eyebrow-light">VISUAL CONTENT WORKSPACE</span><h3>AI Article Image Research</h3><p>Find real, topic-matched images from Wikimedia Commons. No image-generation API or extra API key required.</p></div>
+                  <span className="connected">Featured + 4 in-article</span>
                 </div>
-                <div className="image-studio-layout">
+                <div className="image-studio-layout image-search-layout">
                   <div className="image-studio-controls">
                     <div className="form-group">
                       <label>Select Blog Article</label>
                       <select value={String(generatedArticle?.id || "")} onChange={(event) => {
                         const chosen = articles.find((item: any) => String(item.id) === event.target.value) || null;
                         setGeneratedArticle(chosen);
-                        setImagePrompt(chosen ? `Create a professional, original, high-quality editorial featured image for this blog article: ${chosen.title}. Visual context: ${String(chosen.content || "").replace(/<[^>]*>/g, " ").slice(0, 1200)}. No text, no watermark, wide landscape composition.` : "");
-                        setGeneratedImage("");
+                        setImageResults([]);
+                        setFeaturedImage(null);
+                        setSelectedInlineImageIds([]);
                       }}>
                         <option value="">Choose an article</option>
                         {articles.map((item: any) => <option key={item.id} value={String(item.id)}>{item.title || "Untitled article"}</option>)}
                       </select>
                     </div>
-                    <div className="form-group">
-                      <label>Image Provider</label>
-                      <select value={selectedImageProvider} onChange={(event) => setSelectedImageProvider(event.target.value)}>
-                        {imageProviders.map((provider: any) => <option key={provider.id} value={provider.id}>{provider.name}{provider.configured ? "" : " — configure API key"}</option>)}
-                      </select>
+                    <div className="image-search-summary">
+                      <strong>AI context-aware search</strong>
+                      <span>Uses the article title, focus keyword and section headings to discover relevant photography.</span>
+                      {imageSearchQueries.length > 0 && <small>Search topics: {imageSearchQueries.join(" · ")}</small>}
                     </div>
-                    <div className="form-group">
-                      <label>Image Prompt / Art Direction</label>
-                      <textarea rows={7} value={imagePrompt} onChange={(event) => setImagePrompt(event.target.value)} placeholder="Select an article to automatically create a relevant image prompt, or write your own art direction..." />
-                      <small>When launched from an article card, the prompt is prepared automatically using its title and content.</small>
-                    </div>
-                    <button type="button" className="primary-button" disabled={!generatedArticle?.id || imageLoading || !imageProviders.some((item: any) => item.id === selectedImageProvider && item.configured)} onClick={() => void generateFeaturedImage()}>
-                      {imageLoading ? <><span className="button-spinner" /> Generating Image...</> : "✦ Generate Featured Image"}
+                    <button type="button" className="primary-button" disabled={!generatedArticle?.id || imageLoading} onClick={() => void searchArticleImages()}>
+                      {imageLoading ? <><span className="button-spinner" /> Searching Wikimedia...</> : "⌕ Search Article Images"}
                     </button>
+                    <div className="image-selection-status">
+                      <span>Featured image: <b>{featuredImage ? "Selected" : "Not selected"}</b></span>
+                      <span>In-article: <b>{selectedInlineImageIds.length}/4 selected</b></span>
+                    </div>
+                    <button type="button" className="primary-button" disabled={!featuredImage || selectedInlineImageIds.length !== 4 || imageLoading} onClick={() => void applyArticleImages()}>
+                      {imageLoading ? "Saving selections..." : "Apply Images to Article"}
+                    </button>
+                    <small className="muted">Images are added to your article and uploaded to the connected WordPress Media Library when you create its draft. Source and license attribution are retained.</small>
                   </div>
-                  <div className="image-studio-preview">
-                    {generatedImage ? <img className="generated-featured-image" src={generatedImage} alt="Generated featured image" /> : <div className="image-placeholder"><div className="image-placeholder-art"><span>✧</span><i /><b /></div><div><strong>Your featured image will appear here</strong><small>Select a blog and generate a new image. It will be saved with that article.</small></div></div>}
+                  <div className="image-studio-preview image-search-results">
+                    {imageResults.length === 0 ? (
+                      <div className="image-placeholder"><div className="image-placeholder-art"><span>⌕</span><i /><b /></div><div><strong>Article-related images will appear here</strong><small>Choose an article and search to see relevant image options.</small></div></div>
+                    ) : (
+                      <div className="article-image-results-grid">
+                        {imageResults.map((image: any) => {
+                          const isFeatured = featuredImage?.id === image.id;
+                          const isInline = selectedInlineImageIds.includes(image.id);
+                          return <article className={`article-image-result ${isFeatured ? "is-featured" : ""} ${isInline ? "is-inline" : ""}`} key={image.id}>
+                            <img src={image.thumbnailUrl} alt={image.description || image.title} loading="lazy" />
+                            <div className="article-image-result-info">
+                              <strong title={image.title}>{image.title}</strong>
+                              <small>{image.section || image.searchQuery}</small>
+                              <small>{image.license} · {image.width}×{image.height}</small>
+                              <div className="article-image-result-actions">
+                                <button type="button" className={isFeatured ? "selected-image-action" : "secondary-button"} onClick={() => setFeaturedImage(isFeatured ? null : image)}>{isFeatured ? "✓ Featured" : "Set Featured"}</button>
+                                <label><input type="checkbox" checked={isInline} disabled={!isInline && selectedInlineImageIds.length >= 4 || isFeatured} onChange={() => toggleInlineImage(image)} /> In article</label>
+                              </div>
+                              <a href={image.sourceUrl} target="_blank" rel="noreferrer">View source & license ↗</a>
+                            </div>
+                          </article>;
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
-                <div className="image-api-shortcut"><span>Need to configure image APIs?</span><button type="button" className="text-button" onClick={() => setPage("AI Providers")}>Open AI Providers →</button></div>
               </section>
             </>
           )}
@@ -1740,28 +1807,7 @@ function App() {
             <>
               <section className="panel"><div className="panel-heading"><div><h3>Available AI Providers</h3><p>Built-in providers and your manually configured APIs.</p></div><span className="connected">{providers.length} providers available</span></div></section>
 
-              <section className="panel image-api-settings">
-                <div className="panel-heading">
-                  <div><h3>Image Generation APIs</h3><p>Configure separate API keys for featured-image creation.</p></div>
-                  <span className="status-badge">2 image providers</span>
-                </div>
-                <div className="image-api-grid">
-                  {imageProviders.map((provider: any) => (
-                    <div className="image-api-card" key={provider.id}>
-                      <div><strong>{provider.name}</strong><small>{provider.id === "image-openai" ? "OpenAI Images · gpt-image-1" : "Google Nano Banana 2 · gemini-3.1-flash-image"}</small></div>
-                      <span className={provider.configured ? "connected" : "muted"}>{provider.configured ? "Key saved" : "Not configured"}</span>
-                      <div className="form-group">
-                        <label>API Key</label>
-                        <input type="password" autoComplete="new-password" value={imageApiKeyInputs[provider.id] || ""} onChange={(event) => setImageApiKeyInputs((current) => ({ ...current, [provider.id]: event.target.value }))} placeholder={provider.configured ? "Saved securely — enter to replace" : "Paste API key"} />
-                        <small>{provider.configured ? "Leave blank to keep the saved key." : "Your key is encrypted and stored locally."}</small>
-                      </div>
-                      <button type="button" className="primary-button" disabled={imageProviderSaving === provider.id} onClick={() => void saveImageProvider(provider)}>
-                        {imageProviderSaving === provider.id ? "Saving..." : "Save Image API"}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </section>
+
 
               <div className="provider-grid">
                 {providers.map((provider: any) => (
