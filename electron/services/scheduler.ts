@@ -1,4 +1,3 @@
-
 import cron from "node-cron";
 import type { Database } from "./database";
 
@@ -6,25 +5,19 @@ let schedulerTask: cron.ScheduledTask | null = null;
 
 export function startScheduler(
   db: Database,
-  onDue: (jobId: number) => void
+  onDue: (scheduleId: number) => Promise<void> | void
 ): void {
-  if (schedulerTask) {
-    schedulerTask.stop();
-  }
+  if (schedulerTask) schedulerTask.stop();
 
-  schedulerTask = cron.schedule("* * * * *", () => {
+  schedulerTask = cron.schedule("* * * * *", async () => {
     try {
       const dueSchedules = db.getDueSchedules();
-
       for (const schedule of dueSchedules) {
         try {
-          onDue(schedule.id);
+          await onDue(schedule.id);
           db.markScheduleTriggered(schedule.id);
         } catch (error) {
-          console.error(
-            `Schedule ${schedule.id} failed:`,
-            error
-          );
+          console.error(`Schedule ${schedule.id} failed:`, error);
         }
       }
     } catch (error) {
