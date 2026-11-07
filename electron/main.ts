@@ -1,10 +1,4 @@
-import {
-  app,
-  BrowserWindow,
-  ipcMain,
-  safeStorage
-} from "electron";
-
+import { app, BrowserWindow, ipcMain, safeStorage } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 
@@ -12,12 +6,17 @@ import { Database } from "./services/database";
 import { runParallelGeneration } from "./services/generation";
 import { publishDraft } from "./services/wordpress";
 import { startScheduler } from "./services/scheduler";
+import {
+  getMachineId,
+  getLicenseStatus,
+  activateLicense
+} from "./services/license";
 
 let win: BrowserWindow | null = null;
 let db: Database;
 
-let networkTimer: ReturnType<typeof setInterval> | null = null;
-let lastOnlineStatus: boolean | null = null;
+const licenseFile = () =>
+  path.join(app.getPath("userData"), "license.json");
 
 // --------------------------------------------------
 // Portable application data
@@ -32,216 +31,74 @@ const portableBase =
 const isPortableBuild = app.isPackaged && Boolean(portableBase);
 
 if (isPortableBuild && portableBase) {
-  const dataPath = path.join(
-    portableBase,
-    "AI-Content-Studio-Data"
-  );
+  const dataPath = path.join(portableBase, "AI-Content-Studio-Data");
 
   app.setPath("userData", dataPath);
-  app.setPath(
-    "sessionData",
-    path.join(dataPath, "session")
-  );
+  app.setPath("sessionData", path.join(dataPath, "session"));
 }
 
 // --------------------------------------------------
-// API key encryption
+// License protection
+// --------------------------------------------------
+
+function requireValidLicense(): void {
+  const status = getLicenseStatus(licenseFile());
+
+  if (!status.valid) {
+    throw new Error(
+      status.message || "A valid activation license is required."
+    );
+  }
+}
+
+// These three handlers remain available before activation.
+ipcMain.handle("license:machine-id", () => getMachineId());
+
+ipcMain.handle("license:status", () =>
+  getLicenseStatus(licenseFile())
+);
+
+ipcMain.handle("license:activate", (_event, code: string) => {
+  if (typeof code !== "string" || !code.trim()) {
+    throw new Error("Please enter your activation code.");
+  }
+
+  activateLicense(licenseFile(), code.trim());
+  return getLicenseStatus(licenseFile());
+});
+
+// --------------------------------------------------
+// Encryption helpers
 // --------------------------------------------------
 
 function encryptApiKey(apiKey: string): {
   apiKey: string;
   encrypted: boolean;
 } {
-  if (!apiKey) {
-    throw new Error("API key cannot be empty.");
-  }
+  const encryptionAvailable = safeStorage.isEncryptionAvailable();
 
-  if (!safeStorage.isEncryptionAvailable()) {
-    throw new Error(
-      "Windows secure storage is unavailable. API key was not saved."
-    );
-  }
+  const encryptedKey = encryptionAvailable
+    ? safeStorage.encryptString(apiKey).toString("base64")
+    : Buffer.from(apiKey).toString("base64");
 
   return {
-    apiKey: safeStorage.encryptString(apiKey).toString("base64"),
-    encrypted: true
+    apiKey: encryptedKey,
+    encrypted: encryptionAvailable
   };
 }
 
 function decryptApiKey(provider: any): any {
   const storedKey = provider.api_key ?? provider.apiKey ?? "";
-
-  if (!storedKey) {
-    throw new Error(
-      `${provider.name || "AI provider"} has no saved API key.`
-    );
-  }
-
   let apiKey = "";
 
-  if (provider.encrypted && safeStorage.isEncryptionAvailable()) {
-    apiKey = safeStorage.decryptString(
-      Buffer.from(storedKey, "base64")
-    );
-  } else {
-    // Compatibility with older versions that stored Base64 keys.
-    apiKey = Buffer.from(storedKey, "base64").toString("utf8");
+  if (storedKey) {
+    apiKey =
+      provider.encrypted && safeStorage.isEncryptionAvailable()
+        ? safeStorage.decryptString(Buffer.from(storedKey, "base64"))
+        : Buffer.from(storedKey, "base64").toString("utf8");
   }
 
-  return {
-    ...provider,
-    apiKey
-  };
-}
-
-// --------------------------------------------------
-// Internet connectivity
-// --------------------------------------------------
-
-async function checkInternet(): Promise<boolean> {
-  const controller = new AbortController();
-
-  const timeout = setTimeout(() => {
-    controller.abort();
-  }, 5000);
-
-  try {
-    const response = await fetch(
-      "https://www.google.com/generate_204",
-      {
-        method: "GET",
-        signal: controller.signal,
-        cache: "no-store"
-      }
-    );
-
-    return response.status === 204 || response.ok;
-  } catch {
-    return false;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-async function updateNetworkStatus(): Promise<boolean> {
-  const online = await checkInternet();
-
-  if (online !== lastOnlineStatus) {
-    lastOnlineStatus = online;
-
-    if (win && !win.isDestroyed()) {
-      win.webContents.send(
-        "network:status-changed",
-        online
-      );
-    }
-  }
-
-  return online;
-}
-
-// --------------------------------------------------
-// AI provider connection testing
-// --------------------------------------------------
-
-async function testAIProvider(providerName: string) {
-  const normalized = providerName.toLowerCase();
-
-  const savedProviders = db.getEnabledProviders();
-
-  const savedProvider = savedProviders.find(
-    (item: any) =>
-      String(item.provider || item.name).toLowerCase() === normalized
-  );
-
-  if (!savedProvider) {
-    throw new Error(
-      `${providerName} is not configured or enabled.`
-    );
-  }
-
-  const provider = decryptApiKey(savedProvider);
-  const apiKey = provider.apiKey;
-
-  let endpoint = "";
-  const headers: Record<string, string> = {};
-
-  if (normalized === "gemini") {
-    endpoint =
-      "https://generativelanguage.googleapis.com/v1beta/models?key=" +
-      encodeURIComponent(apiKey);
-  } else if (normalized === "groq") {
-    endpoint = "https://api.groq.com/openai/v1/models";
-    headers.Authorization = `Bearer ${apiKey}`;
-  } else if (normalized === "openrouter") {
-    endpoint = "https://openrouter.ai/api/v1/models";
-    headers.Authorization = `Bearer ${apiKey}`;
-  } else {
-    throw new Error(`Unsupported AI provider: ${providerName}`);
-  }
-
-  const response = await fetch(endpoint, {
-    method: "GET",
-    headers,
-    signal: AbortSignal.timeout(12000)
-  });
-
-  if (!response.ok) {
-    const details = await response.text();
-
-    throw new Error(
-      `${providerName} connection failed (${response.status}): ${details.slice(0, 300)}`
-    );
-  }
-
-  return {
-    ok: true,
-    provider: providerName,
-    message: `${providerName} connected successfully.`
-  };
-}
-
-// --------------------------------------------------
-// WordPress website connection testing
-// --------------------------------------------------
-
-async function testWordPressSite(siteId: number) {
-  const site = db.getSite(siteId);
-
-  if (!site) {
-    throw new Error("Website not found.");
-  }
-
-  if (!site.url) {
-    throw new Error("Website URL is missing.");
-  }
-
-  const baseUrl = String(site.url).replace(/\/+$/, "");
-
-  let response: Response;
-
-  try {
-    response = await fetch(`${baseUrl}/wp-json/`, {
-      method: "GET",
-      signal: AbortSignal.timeout(12000)
-    });
-  } catch {
-    throw new Error(
-      "Website could not be reached. Check its URL and internet connection."
-    );
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      `WordPress REST API returned HTTP ${response.status}.`
-    );
-  }
-
-  return {
-    ok: true,
-    siteId,
-    message: "WordPress REST API is reachable."
-  };
+  return { ...provider, apiKey };
 }
 
 // --------------------------------------------------
@@ -255,7 +112,6 @@ function createWindow(): void {
     minWidth: 1100,
     minHeight: 720,
     title: "AI Content Studio",
-
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -267,9 +123,7 @@ function createWindow(): void {
   if (process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
-    win.loadFile(
-      path.join(__dirname, "../dist/index.html")
-    );
+    win.loadFile(path.join(__dirname, "../dist/index.html"));
   }
 
   win.on("closed", () => {
@@ -281,29 +135,50 @@ function createWindow(): void {
 // Application initialization
 // --------------------------------------------------
 
-app.whenReady().then(async () => {
+app.whenReady().then(() => {
   const dataDir = app.getPath("userData");
-
   fs.mkdirSync(dataDir, { recursive: true });
 
-  db = new Database(
-    path.join(dataDir, "studio.sqlite")
-  );
+  db = new Database(path.join(dataDir, "studio.sqlite"));
+
+  startScheduler(db, async (scheduleId: number) => {
+    requireValidLicense();
+
+    const schedule = db.getSchedule(scheduleId);
+    if (!schedule) return;
+
+    const providers = db
+      .getEnabledProviders()
+      .map((provider: any) => decryptApiKey(provider));
+
+    if (!providers.length) {
+      throw new Error("No enabled AI providers are configured.");
+    }
+
+    const jobId = db.createJob({
+      topic: schedule.topic,
+      siteId: schedule.site_id
+    });
+
+    try {
+      const results = await runParallelGeneration(
+        {
+          topic: schedule.topic,
+          keyword: schedule.topic,
+          wordCount: 2000
+        },
+        providers
+      );
+
+      db.saveGenerationResults(jobId, results);
+      win?.webContents.send("job:scheduled", scheduleId);
+    } catch (error: any) {
+      db.failJob(jobId, error?.message || String(error));
+      throw error;
+    }
+  });
 
   createWindow();
-
-  // Initial internet check
-  void updateNetworkStatus();
-
-  // Check internet connection every 10 seconds
-  networkTimer = setInterval(() => {
-    void updateNetworkStatus();
-  }, 10000);
-
-  // Start automatic scheduler
-  startScheduler(db, (jobId: number) => {
-    win?.webContents.send("job:scheduled", jobId);
-  });
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -317,25 +192,11 @@ app.whenReady().then(async () => {
 // --------------------------------------------------
 
 app.on("window-all-closed", () => {
-  if (networkTimer) {
-    clearInterval(networkTimer);
-    networkTimer = null;
-  }
-
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  if (process.platform !== "darwin") app.quit();
 });
 
 app.on("before-quit", () => {
-  if (networkTimer) {
-    clearInterval(networkTimer);
-    networkTimer = null;
-  }
-
-  if (db) {
-    db.close();
-  }
+  if (db) db.close();
 });
 
 // --------------------------------------------------
@@ -343,17 +204,8 @@ app.on("before-quit", () => {
 // --------------------------------------------------
 
 ipcMain.handle("dashboard:get", () => {
+  requireValidLicense();
   return db.dashboard();
-});
-
-// --------------------------------------------------
-// Internet status
-// --------------------------------------------------
-
-ipcMain.handle("network:status", async () => {
-  return {
-    online: await updateNetworkStatus()
-  };
 });
 
 // --------------------------------------------------
@@ -361,36 +213,18 @@ ipcMain.handle("network:status", async () => {
 // --------------------------------------------------
 
 ipcMain.handle("sites:list", () => {
+  requireValidLicense();
   return db.listSites();
 });
 
 ipcMain.handle("sites:add", (_event, site) => {
-  if (!site?.name || !site?.url || !site?.token) {
-    throw new Error(
-      "Website name, URL and application password are required."
-    );
-  }
-
-  const normalizedUrl = String(site.url)
-    .trim()
-    .replace(/\/+$/, "");
-
-  if (!/^https?:\/\//i.test(normalizedUrl)) {
-    throw new Error("Website URL must start with http:// or https://.");
-  }
-
-  return db.addSite({
-    ...site,
-    url: normalizedUrl
-  });
+  requireValidLicense();
+  return db.addSite(site);
 });
 
 ipcMain.handle("sites:delete", (_event, id: number) => {
+  requireValidLicense();
   return db.deleteSite(id);
-});
-
-ipcMain.handle("sites:test", async (_event, id: number) => {
-  return testWordPressSite(id);
 });
 
 // --------------------------------------------------
@@ -398,80 +232,38 @@ ipcMain.handle("sites:test", async (_event, id: number) => {
 // --------------------------------------------------
 
 ipcMain.handle("providers:save", (_event, provider) => {
-  const name = String(provider?.name || "").trim();
-  const providerId = String(
-    provider?.provider || name
-  ).toLowerCase();
+  requireValidLicense();
 
-  if (!["gemini", "groq", "openrouter"].includes(providerId)) {
-    throw new Error("Unsupported AI provider.");
-  }
-
-  if (!provider?.model) {
-    throw new Error("Please enter an AI model.");
-  }
-
-  const existing = db.getEnabledProviders().find(
-    (item: any) =>
-      String(item.provider || item.name).toLowerCase() === providerId
+  const encryption = encryptApiKey(
+    provider.apiKey ?? provider.api_key ?? ""
   );
 
-  // Keep the previously saved key when the key field is left empty.
-  const suppliedKey = String(
-    provider.apiKey || provider.api_key || ""
-  ).trim();
-
-  let encryption: {
-    apiKey: string;
-    encrypted: boolean;
-  };
-
-  if (suppliedKey) {
-    encryption = encryptApiKey(suppliedKey);
-  } else if (existing) {
-    encryption = {
-      apiKey: existing.api_key,
-      encrypted: Boolean(existing.encrypted)
-    };
-  } else {
-    throw new Error("Please enter an API key.");
-  }
-
-  return db.saveProvider({
+  db.saveProvider({
     ...provider,
-    id: existing?.id,
-    name,
-    provider: providerId,
     apiKey: encryption.apiKey,
-    encrypted: encryption.encrypted,
-    enabled: provider.enabled !== false
+    encrypted: encryption.encrypted
   });
+
+  return { ok: true };
 });
 
 ipcMain.handle("providers:list", () => {
+  requireValidLicense();
   return db.listProviders();
 });
-
-ipcMain.handle(
-  "providers:test",
-  async (_event, providerName: string) => {
-    return testAIProvider(providerName);
-  }
-);
 
 // --------------------------------------------------
 // Articles
 // --------------------------------------------------
 
 ipcMain.handle("articles:list", () => {
+  requireValidLicense();
   return db.listArticles();
 });
 
-// --------------------------------------------------
-// Parallel AI Article Generation
-// --------------------------------------------------
-
 ipcMain.handle("articles:generate", async (_event, input) => {
+  requireValidLicense();
+
   const jobId = db.createJob(input);
 
   try {
@@ -481,52 +273,36 @@ ipcMain.handle("articles:generate", async (_event, input) => {
 
     if (providers.length === 0) {
       throw new Error(
-        "No enabled AI providers found. Configure Gemini, Groq or OpenRouter first."
+        "No enabled AI providers found. Configure a provider first."
       );
     }
 
-    const results = await runParallelGeneration(
-      input,
-      providers
-    );
-
+    const results = await runParallelGeneration(input, providers);
     db.saveGenerationResults(jobId, results);
 
-    return {
-      jobId,
-      results
-    };
+    return { jobId, results };
   } catch (error: any) {
-    db.failJob(
-      jobId,
-      error?.message || "Generation failed"
-    );
-
+    db.failJob(jobId, error?.message || "Generation failed");
     throw error;
   }
 });
 
 // --------------------------------------------------
-// WordPress Draft Publishing
+// WordPress draft publishing
 // --------------------------------------------------
 
 ipcMain.handle(
   "articles:publish",
   async (_event, { articleId, siteId }) => {
-    const article = db.getArticle(articleId);
+    requireValidLicense();
 
-    if (!article) {
-      throw new Error("Article not found.");
-    }
+    const article = db.getArticle(articleId);
+    if (!article) throw new Error("Article not found.");
 
     const site = db.getSite(siteId);
-
-    if (!site) {
-      throw new Error("WordPress website not found.");
-    }
+    if (!site) throw new Error("WordPress website not found.");
 
     const result = await publishDraft(site, article);
-
     db.markPublished(articleId);
 
     return result;
@@ -534,10 +310,11 @@ ipcMain.handle(
 );
 
 // --------------------------------------------------
-// Article Editing
+// Article editing
 // --------------------------------------------------
 
 ipcMain.handle("articles:save-edit", (_event, article) => {
+  requireValidLicense();
   return db.updateArticle(article);
 });
 
@@ -546,14 +323,17 @@ ipcMain.handle("articles:save-edit", (_event, article) => {
 // --------------------------------------------------
 
 ipcMain.handle("schedule:add", (_event, item) => {
+  requireValidLicense();
   return db.addSchedule(item);
 });
 
 ipcMain.handle("schedule:list", () => {
+  requireValidLicense();
   return db.listSchedules();
 });
 
 ipcMain.handle("schedule:delete", (_event, id: number) => {
+  requireValidLicense();
   return db.deleteSchedule(id);
 });
 
@@ -562,9 +342,10 @@ ipcMain.handle("schedule:delete", (_event, id: number) => {
 // --------------------------------------------------
 
 ipcMain.handle("images:generate", async () => {
+  requireValidLicense();
+
   return {
     ok: false,
-    message:
-      "Image generation adapter is not implemented yet."
+    message: "Image generation adapter is not implemented yet."
   };
 });
