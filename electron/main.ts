@@ -785,7 +785,8 @@ ipcMain.handle("images:search", async (_event, input) => {
   const title = cleanImageSearchText(article.title);
   const keyword = cleanImageSearchText(article.focus_keyword || article.focusKeyword || "");
   const queries = [
-    { query: [title, keyword].filter(Boolean).join(" "), section: "Featured / overall topic" },
+    { query: title, section: "Featured / overall topic" },
+    ...(keyword && keyword.toLowerCase() !== title.toLowerCase() ? [{ query: keyword, section: "Featured / overall topic" }] : []),
     ...headings.slice(0, 4).map((heading) => ({ query: heading, section: heading })),
   ].filter((item) => item.query.length > 2);
   if (!queries.length) throw new Error("The article does not contain enough topic information to search for images.");
@@ -828,7 +829,9 @@ ipcMain.handle("images:search", async (_event, input) => {
         section: item.section,
         searchQuery: item.query,
       };
-    }).filter((image: any) => image.imageUrl && image.thumbnailUrl && image.width >= 600 && image.height >= 350);
+    }).filter((image: any) => image.imageUrl && image.thumbnailUrl && image.sourceUrl
+      && image.width >= 600 && image.height >= 350
+      && /^(CC0|CC BY|CC BY-SA|Public domain)/i.test(image.license));
   }));
 
   const unique = new Map<string, any>();
