@@ -117,7 +117,7 @@ function App() {
   const [manualProviderBaseUrl, setManualProviderBaseUrl] = useState("");
   const [manualProviderApiKey, setManualProviderApiKey] = useState("");
   const [manualProviderSaving, setManualProviderSaving] = useState(false);
-  const [multiAgent, setMultiAgent] = useState(true);
+  const [multiAgent, setMultiAgent] = useState(false);
 
   const [siteName, setSiteName] = useState("");
   const [siteUrl, setSiteUrl] = useState("");
