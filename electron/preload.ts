@@ -56,6 +56,9 @@ contextBridge.exposeInMainWorld("studio", {
   deleteArticle: (id: number) =>
     ipcRenderer.invoke("articles:delete", id),
 
+  aiEditArticle: (input: any) =>
+    ipcRenderer.invoke("articles:ai-edit", input),
+
   generate: (input: any) =>
     ipcRenderer.invoke("articles:generate", input),
 
