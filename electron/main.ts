@@ -10,7 +10,7 @@ import path from "node:path";
 import fs from "node:fs";
 
 import { Database } from "./services/database";
-import { runParallelGeneration } from "./services/generation";
+import { runParallelGeneration, runMultiAgentGeneration } from "./services/generation";
 
 import {
   publishDraft,
@@ -132,7 +132,7 @@ function decryptApiKey(provider: any): any {
 // --------------------------------------------------
 
 function getBuiltinProviders() {
-  return [
+  const builtins = [
     {
       id: "gemini",
       name: "Google Gemini",
@@ -158,6 +158,17 @@ function getBuiltinProviders() {
       enabled: true,
     },
   ].filter((provider) => Boolean(provider.apiKey?.trim()));
+
+  const custom = db.getEnabledProviders().map((row: any) => ({
+    ...decryptApiKey(row),
+    id: `custom:${row.id}`,
+    name: row.name,
+    provider: row.provider,
+    model: row.model,
+    baseUrl: row.base_url || "",
+    enabled: Boolean(row.enabled),
+  }));
+  return [...builtins, ...custom];
 }
 
 function getProviderById(providerId: string) {
@@ -219,10 +230,13 @@ async function testAIProvider(providerId: string) {
         }),
       });
     } else {
-      const endpoint =
-        provider.id === "groq"
-          ? "https://api.groq.com/openai/v1/chat/completions"
-          : "https://openrouter.ai/api/v1/chat/completions";
+      const endpoint = provider.id === "groq"
+        ? "https://api.groq.com/openai/v1/chat/completions"
+        : provider.id === "openrouter"
+          ? "https://openrouter.ai/api/v1/chat/completions"
+          : provider.baseUrl?.replace(/\\/+$/, "").endsWith("/chat/completions")
+            ? provider.baseUrl.replace(/\\/+$/, "")
+            : `${provider.baseUrl?.replace(/\\/+$/, "")}/chat/completions`;
 
       response = await fetch(endpoint, {
         method: "POST",
@@ -518,6 +532,7 @@ ipcMain.handle("providers:save", (_event, provider) => {
     ...provider,
     apiKey: encryption.apiKey,
     encrypted: encryption.encrypted,
+    base_url: provider.baseUrl || provider.base_url || null,
   });
 
   return { ok: true };
@@ -531,7 +546,9 @@ ipcMain.handle("providers:list", () => {
     name: provider.name,
     provider: provider.provider,
     model: provider.model,
-    enabled: true,
+    baseUrl: provider.baseUrl || "",
+    enabled: provider.enabled !== false,
+    builtIn: !String(provider.id).startsWith("custom:"),
   }));
 });
 
@@ -568,10 +585,9 @@ ipcMain.handle(
     const jobId = db.createJob(input);
 
     try {
-      const results = await runParallelGeneration(
-        input,
-        providers
-      );
+      const results = input?.multiAgent
+        ? await runMultiAgentGeneration(input, providers)
+        : await runParallelGeneration(input, providers);
 
       if (!results || results.length === 0) {
         throw new Error(
