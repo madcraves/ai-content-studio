@@ -594,9 +594,15 @@ function App() {
   }
 
   function toggleInlineImage(image: any) {
+    if (featuredImage?.id === image.id) return;
     setSelectedInlineImageIds((current) => current.includes(image.id)
       ? current.filter((id) => id !== image.id)
       : current.length >= 4 ? current : [...current, image.id]);
+  }
+
+  function chooseFeaturedImage(image: any) {
+    setFeaturedImage((current: any) => current?.id === image.id ? null : image);
+    setSelectedInlineImageIds((current) => current.filter((id) => id !== image.id));
   }
 
   function escapeImageHtml(value: string) {
@@ -1555,7 +1561,7 @@ function App() {
                               <small>{image.section || image.searchQuery}</small>
                               <small>{image.license} · {image.width}×{image.height}</small>
                               <div className="article-image-result-actions">
-                                <button type="button" className={isFeatured ? "selected-image-action" : "secondary-button"} onClick={() => setFeaturedImage(isFeatured ? null : image)}>{isFeatured ? "✓ Featured" : "Set Featured"}</button>
+                                <button type="button" className={isFeatured ? "selected-image-action" : "secondary-button"} onClick={() => chooseFeaturedImage(image)}>{isFeatured ? "✓ Featured" : "Set Featured"}</button>
                                 <label><input type="checkbox" checked={isInline} disabled={!isInline && selectedInlineImageIds.length >= 4 || isFeatured} onChange={() => toggleInlineImage(image)} /> In article</label>
                               </div>
                               <a href={image.sourceUrl} target="_blank" rel="noreferrer">View source & license ↗</a>
