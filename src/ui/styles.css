@@ -215,3 +215,20 @@ button:disabled{cursor:not-allowed;opacity:.58}
 .agent-mode-toggle small{color:#88839d;font-size:9px;line-height:1.5}
 .manual-provider-panel .form-footer{align-items:center}
 @media(max-width:650px){.manual-provider-panel .form-footer{align-items:stretch}.manual-provider-panel .form-footer .primary-button{width:100%}}
+
+
+/* In-app software update progress */
+.update-progress-panel,.update-ready-panel{display:flex;align-items:center;gap:18px;margin:0 0 17px;padding:15px 18px;border:1px solid #ded9fb;border-radius:12px;background:#faf9ff}
+.update-progress-panel{display:block}
+.update-progress-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:11px}
+.update-progress-heading>div,.update-ready-panel>div{display:flex;flex-direction:column;gap:4px;min-width:0}
+.update-progress-heading strong,.update-ready-panel strong{color:#373253;font-size:12px;font-weight:800}
+.update-progress-heading span,.update-ready-panel span{color:#77758f;font-size:10px;line-height:1.5}
+.update-progress-heading>b{color:#5e50c2;font:800 15px Manrope,sans-serif;font-variant-numeric:tabular-nums}
+.update-progress-track{height:9px;overflow:hidden;border-radius:20px;background:#e9e6f7}
+.update-progress-fill{height:100%;border-radius:20px;background:linear-gradient(90deg,#705de2,#557ed7);transition:width .25s ease}
+.update-progress-panel>small{display:block;margin-top:8px;color:#85839a;font-size:9px}
+.update-ready-panel{justify-content:space-between;border-color:#d4eddf;background:#f3fbf6}
+.update-ready-panel strong{color:#176c4e}
+.update-ready-panel .primary-button{flex:0 0 auto}
+@media(max-width:650px){.update-ready-panel{align-items:stretch;flex-direction:column}.update-ready-panel .primary-button{width:100%}}
