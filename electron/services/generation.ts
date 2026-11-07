@@ -333,7 +333,7 @@ async function callOpenAICompatible(
   } else if (providerId === "openrouter") {
     endpoint = "https://openrouter.ai/api/v1/chat/completions";
   } else if (providerId === "openai-compatible" && provider.baseUrl) {
-    const base = provider.baseUrl.trim().replace(/\\/+$/, "");
+    const base = provider.baseUrl.trim().replace(/\/+$/, "");
     endpoint = base.endsWith("/chat/completions") ? base : `${base}/chat/completions`;
   } else {
     throw new Error(
