@@ -75,6 +75,8 @@ declare global {
 
     listProviders: () => Promise<AIProvider[]>;
     listArticles: () => Promise<Article[]>;
+    searchArticleImages: (input: { articleId: number }) => Promise<any>;
+    getArticleImage: (articleId: number) => Promise<string | null>;
     generate: (input: any) => Promise<any>;
     publish: (input: any) => Promise<any>;
     saveEdit: (article: Partial<Article>) => Promise<any>;
