@@ -622,8 +622,8 @@ ipcMain.handle(
     }
 
     const allProviders = getBuiltinProviders();
-    const providers = input.providerId
-      ? allProviders.filter((provider: any) => provider.id === input.providerId)
+    const providers = input.providerId && input.providerId !== "all"
+      ? allProviders.filter((provider: any) => provider.id === input.providerId && provider.enabled !== false && provider.apiKey?.trim())
       : allProviders.filter((provider: any) => provider.enabled !== false && provider.apiKey?.trim());
 
     if (providers.length === 0 || !providers[0].apiKey?.trim()) {
