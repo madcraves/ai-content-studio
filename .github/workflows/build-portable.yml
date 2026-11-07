@@ -7,7 +7,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -29,7 +29,7 @@ jobs:
           node --version
           npm --version
 
-      - name: Install Project Dependencies
+      - name: Set release version\n        shell: bash\n        run: npm version 1.0.${{ github.run_number }} --no-git-tag-version\n\n      - name: Install Project Dependencies
         run: npm install --no-audit --no-fund
 
       - name: Rebuild Native Dependencies
@@ -53,3 +53,16 @@ jobs:
             release/installer/*.blockmap
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish GitHub Release for Auto Updates
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: AI Content Studio v1.0.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          files: |
+            release/installer/*
+          generate_release_notes: true
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
