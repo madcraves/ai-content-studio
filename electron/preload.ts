@@ -66,6 +66,16 @@ contextBridge.exposeInMainWorld("studio", {
   deleteSchedule: (id: number) =>
     ipcRenderer.invoke("schedule:delete", id),
 
+  // Automatic application updates
+  getUpdateStatus: () => ipcRenderer.invoke("updates:status"),
+  checkForUpdates: () => ipcRenderer.invoke("updates:check"),
+  installUpdate: () => ipcRenderer.invoke("updates:install"),
+  onUpdateStatus: (callback: (status: any) => void) => {
+    const listener = (_event: any, status: any) => callback(status);
+    ipcRenderer.on("updates:status", listener);
+    return () => ipcRenderer.removeListener("updates:status", listener);
+  },
+
   // Network status
   getConnectionStatus: async (): Promise<NetworkStatus> => {
     const result = await ipcRenderer.invoke("network:status");
