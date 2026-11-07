@@ -580,6 +580,9 @@ export async function runMultiAgentGeneration(input: GenerationInput, providers:
     { role: "Editorial Agent", task: "Improve clarity, readability, flow, tone and remove repetition while preserving useful detail and the requested length." },
     { role: "Fact-Check & Final QA Agent", task: "Review factual consistency, qualify unsupported claims, check structure and produce the final publish-ready article. Never fabricate citations." },
   ];
+  while (stages.length < active.length) {
+    stages.push({ role: `Independent Review Agent ${stages.length + 1}`, task: "Independently review the current article for missing topical coverage, weak explanations, factual caution, SEO opportunities and human readability. Improve the article substantially without adding unsupported claims." });
+  }
   let previous: GeneratedArticle | null = null;
   for (let i = 0; i < stages.length; i++) {
     const stage = stages[i];
