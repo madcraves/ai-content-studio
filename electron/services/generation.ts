@@ -140,7 +140,7 @@ function extractJSON(text: string): any {
     const ch = cleaned[i];
     if (inString) {
       if (escaped) escaped = false;
-      else if (ch === "\\\\") escaped = true;
+      else if (ch === "\\") escaped = true;
       else if (ch === '"') inString = false;
       continue;
     }
@@ -169,11 +169,11 @@ function extractJSON(text: string): any {
       const ch = candidate[i];
       if (inString) {
         if (escaped) { repaired += ch; escaped = false; }
-        else if (ch === "\\\\") { repaired += ch; escaped = true; }
+        else if (ch === "\\") { repaired += ch; escaped = true; }
         else if (ch === '"') { repaired += ch; inString = false; }
-        else if (ch === "\n") repaired += "\\\\n";
-        else if (ch === "\r") repaired += "\\\\r";
-        else if (ch === "\t") repaired += "\\\\t";
+        else if (ch === "\n") repaired += "\\n";
+        else if (ch === "\r") repaired += "\\r";
+        else if (ch === "\t") repaired += "\\t";
         else repaired += ch;
       } else {
         repaired += ch;
