@@ -508,7 +508,7 @@ ipcMain.handle(
 
     const result = await testWordPressConnection(site);
 
-    if (result?.ok || result?.success) {
+    if (result?.success || result?.success) {
       return {
         ...result,
         ok: true,
