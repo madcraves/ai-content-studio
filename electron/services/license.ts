@@ -24,6 +24,7 @@ export type LicensePayload = {
   machineId: string;
   licensee: string;
   issuedAt: string;
+  expiresAt?: string | null;
   features: string[];
 };
 
@@ -31,6 +32,10 @@ export type LicenseStatus = {
   activated: boolean;
   machineId: string;
   licensee?: string;
+  issuedAt?: string;
+  expiresAt?: string | null;
+  remainingMs?: number | null;
+  isLifetime?: boolean;
   message: string;
 };
 
@@ -143,6 +148,12 @@ export function validateLicenseCode(code: string): LicensePayload {
     throw new Error("License information is incomplete.");
   }
 
+  if (payload.expiresAt) {
+    const expiry = Date.parse(payload.expiresAt);
+    if (!Number.isFinite(expiry)) throw new Error("License expiry date is invalid.");
+    if (expiry <= Date.now()) throw new Error("This license has expired. Please contact MadCraves for renewal.");
+  }
+
   return payload;
 }
 
@@ -170,12 +181,23 @@ export function getLicenseStatus(
       activated: true,
       machineId,
       licensee: payload.licensee,
+      issuedAt: payload.issuedAt,
+      expiresAt: payload.expiresAt || null,
+      remainingMs: payload.expiresAt ? Math.max(0, Date.parse(payload.expiresAt) - Date.now()) : null,
+      isLifetime: !payload.expiresAt,
       message: "AI Content Studio is activated."
     };
   } catch (error: any) {
+    let metadata: any = {};
+    try {
+      const saved = JSON.parse(fs.readFileSync(licenseFile, "utf8"));
+      const { payload } = decodeLicenseCode(saved.code);
+      metadata = { licensee: payload.licensee, issuedAt: payload.issuedAt, expiresAt: payload.expiresAt || null, remainingMs: payload.expiresAt ? Math.max(0, Date.parse(payload.expiresAt) - Date.now()) : null, isLifetime: !payload.expiresAt };
+    } catch { /* Keep invalid-license details minimal. */ }
     return {
       activated: false,
       machineId,
+      ...metadata,
       message: error?.message || "The saved license is invalid."
     };
   }
@@ -211,6 +233,10 @@ export function activateLicense(
     activated: true,
     machineId: getMachineId(),
     licensee: payload.licensee,
+    issuedAt: payload.issuedAt,
+    expiresAt: payload.expiresAt || null,
+    remainingMs: payload.expiresAt ? Math.max(0, Date.parse(payload.expiresAt) - Date.now()) : null,
+    isLifetime: !payload.expiresAt,
     message: "Activation successful. Welcome to AI Content Studio."
   };
 }
