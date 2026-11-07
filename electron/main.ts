@@ -169,7 +169,7 @@ function getBuiltinProviders() {
       id,
       name: defaults[id].name,
       provider: id,
-      model: id === "gemini" && saved?.model === "gemini-3.8-flash" ? defaults[id].model : (saved?.model || defaults[id].model),
+      model: id === "gemini" && ["gemini-3.8-flash", "gemini-3.6-flash"].includes(saved?.model) ? defaults[id].model : (saved?.model || defaults[id].model),
       apiKey: saved?.apiKey || defaults[id].apiKey,
       enabled: true,
       configured: Boolean((saved?.apiKey || defaults[id].apiKey || "").trim()),
