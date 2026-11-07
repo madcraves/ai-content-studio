@@ -1,6 +1,12 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("studio", {
+  // Offline license activation
+  getLicenseStatus: () => ipcRenderer.invoke("license:status"),
+  getMachineId: () => ipcRenderer.invoke("license:machine-id"),
+  activateLicense: (code: string) =>
+    ipcRenderer.invoke("license:activate", code),
+
   // Dashboard
   dashboard: () => ipcRenderer.invoke("dashboard:get"),
 
@@ -13,22 +19,32 @@ contextBridge.exposeInMainWorld("studio", {
   // AI providers
   saveProvider: (provider: any) =>
     ipcRenderer.invoke("providers:save", provider),
-
-  listProviders: () =>
-    ipcRenderer.invoke("providers:list"),
-
-  testProvider: (provider: string) =>
+  listProviders: () => ipcRenderer.invoke("providers:list"),
+  testProvider: (provider: any) =>
     ipcRenderer.invoke("providers:test", provider),
 
-  // Internet connection
+  // Articles
+  listArticles: () => ipcRenderer.invoke("articles:list"),
+  generate: (input: any) =>
+    ipcRenderer.invoke("articles:generate", input),
+  publish: (input: any) =>
+    ipcRenderer.invoke("articles:publish", input),
+  saveEdit: (article: any) =>
+    ipcRenderer.invoke("articles:save-edit", article),
+
+  // Scheduler
+  addSchedule: (item: any) =>
+    ipcRenderer.invoke("schedule:add", item),
+  listSchedules: () => ipcRenderer.invoke("schedule:list"),
+  deleteSchedule: (id: number) =>
+    ipcRenderer.invoke("schedule:delete", id),
+
+  // Network status
   getConnectionStatus: () =>
     ipcRenderer.invoke("network:status"),
 
-  onNetworkStatus: (callback: (status: boolean) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, status: boolean) => {
-      callback(status);
-    };
-
+  onNetworkStatus: (callback: (status: any) => void) => {
+    const listener = (_event: any, status: any) => callback(status);
     ipcRenderer.on("network:status-changed", listener);
 
     return () => {
@@ -36,34 +52,9 @@ contextBridge.exposeInMainWorld("studio", {
     };
   },
 
-  // Articles
-  listArticles: () =>
-    ipcRenderer.invoke("articles:list"),
-
-  generate: (input: any) =>
-    ipcRenderer.invoke("articles:generate", input),
-
-  publish: (input: any) =>
-    ipcRenderer.invoke("articles:publish", input),
-
-  saveEdit: (article: any) =>
-    ipcRenderer.invoke("articles:save-edit", article),
-
-  // Scheduler
-  addSchedule: (item: any) =>
-    ipcRenderer.invoke("schedule:add", item),
-
-  listSchedules: () =>
-    ipcRenderer.invoke("schedule:list"),
-
-  deleteSchedule: (id: number) =>
-    ipcRenderer.invoke("schedule:delete", id),
-
+  // Scheduled job notifications
   onScheduled: (callback: (id: number) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, id: number) => {
-      callback(id);
-    };
-
+    const listener = (_event: any, id: number) => callback(id);
     ipcRenderer.on("job:scheduled", listener);
 
     return () => {
