@@ -1,4 +1,4 @@
-name: Build AI Content Studio
+name: Build AI Content Studio Windows Installer
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build:
-    name: Build Portable Windows App
+    name: Build Windows Installer
     runs-on: windows-latest
 
     steps:
@@ -41,16 +41,15 @@ jobs:
       - name: Build Electron TypeScript
         run: npx tsc -p electron/tsconfig.json
 
-      - name: Create Portable Windows EXE
-        run: npm run make:portable
+      - name: Create Windows Installer
+        run: npm run make:installer
 
-      - name: Upload Portable Application
+      - name: Upload Windows Installer
         uses: actions/upload-artifact@v4
         with:
-          name: AI-Content-Studio-Portable-Windows-x64
+          name: AI-Content-Studio-Windows-Installer-x64
           path: |
-            release/**/*.exe
-            release/**/*.7z
-            release/**/*.zip
+            release/installer/*.exe
+            release/installer/*.blockmap
           if-no-files-found: error
           retention-days: 14
