@@ -207,7 +207,7 @@ export async function publishDraft(site: WordPressSite, article: Article) {
   if (featuredMarker?.[1]) {
     try {
       const featured = JSON.parse(decodeURIComponent(featuredMarker[1]));
-      const uploaded = await uploadRemoteImage(String(featured.url || ""), String(featured.alt || article.title), String(featured.attribution || featured.artist || ""));
+      const uploaded = await uploadRemoteImage(String(featured.url || ""), String(featured.alt || article.title), `${featured.attribution || featured.artist || ""} · ${featured.license || ""} · ${featured.sourceUrl || ""}`);
       featuredMediaId = uploaded.id;
     } catch (error: any) {
       throw new Error(`Featured image upload failed: ${error?.message || String(error)}`);
