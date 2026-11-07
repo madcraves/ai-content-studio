@@ -779,17 +779,21 @@ ipcMain.handle("images:search", async (_event, input) => {
   if (!article) throw new Error("Article not found.");
 
   const html = String(article.content || "");
-  const headings = [...html.matchAll(/<h[2-3][^>]*>([\s\S]*?)<\/h[2-3]>/gi)]
+  const headings = [...html.matchAll(/<h[2-3][^>]*>([\\s\\S]*?)<\\/h[2-3]>/gi)]
     .map((match) => cleanImageSearchText(match[1]))
     .filter((value) => value.length > 8);
   const title = cleanImageSearchText(article.title);
   const keyword = cleanImageSearchText(article.focus_keyword || article.focusKeyword || "");
+  const customQuery = cleanImageSearchText(String(input?.customQuery || "").slice(0, 180));
   const queries = [
+    ...(customQuery ? [{ query: customQuery, section: "Custom search" }] : []),
     { query: title, section: "Featured / overall topic" },
     ...(keyword && keyword.toLowerCase() !== title.toLowerCase() ? [{ query: keyword, section: "Featured / overall topic" }] : []),
     ...headings.slice(0, 4).map((heading) => ({ query: heading, section: heading })),
-  ].filter((item) => item.query.length > 2);
-  if (!queries.length) throw new Error("The article does not contain enough topic information to search for images.");
+  ].filter((item, index, all) => item.query.length > 2
+    && all.findIndex((candidate) => candidate.query.toLowerCase() === item.query.toLowerCase()) === index)
+    .slice(0, 6);
+  if (!queries.length) throw new Error("Enter a custom image search topic or select an article with a title.");
 
   async function requestJson(url: string): Promise<any> {
     let lastError: unknown;
@@ -818,7 +822,7 @@ ipcMain.handle("images:search", async (_event, input) => {
   async function searchOpenverse(item: { query: string; section: string }) {
     const params = new URLSearchParams({
       q: item.query,
-      page_size: "20",
+      page_size: "30",
       license: "cc0,by,by-sa,pdm",
       mature: "false",
     });
@@ -848,8 +852,8 @@ ipcMain.handle("images:search", async (_event, input) => {
   async function searchCommons(item: { query: string; section: string }) {
     const params = new URLSearchParams({
       action: "query", format: "json", generator: "search", gsrnamespace: "6",
-      gsrsearch: item.query, gsrlimit: "8", prop: "imageinfo",
-      iiprop: "url|extmetadata", iiurlwidth: "1000",
+      gsrsearch: item.query, gsrlimit: "15", prop: "imageinfo",
+      iiprop: "url|extmetadata", iiurlwidth: "1200",
     });
     const data = await requestJson("https://commons.wikimedia.org/w/api.php?" + params.toString());
     return Object.values(data?.query?.pages || {}).map((page: any) => {
@@ -879,28 +883,34 @@ ipcMain.handle("images:search", async (_event, input) => {
       && /^(CC0|CC BY|CC BY-SA|Public domain)/i.test(image.license));
   }
 
+  // Search both free image indexes for every topic, rather than using Commons only
+  // when Openverse fails. This substantially broadens results for each search.
   const batches = await Promise.all(queries.map(async (item) => {
-    try {
-      const openverseResults = await searchOpenverse(item);
-      if (openverseResults.length) return openverseResults;
-    } catch (error) {
-      console.warn(`[Image Search] Openverse failed ("${item.query}"): ${error instanceof Error ? error.message : String(error)}`);
-    }
-    try {
-      return await searchCommons(item);
-    } catch (error) {
-      console.warn(`[Image Search] Wikimedia fallback failed ("${item.query}"): ${error instanceof Error ? error.message : String(error)}`);
-      return [];
-    }
+    const [openverseResults, commonsResults] = await Promise.all([
+      searchOpenverse(item).catch((error) => {
+        console.warn(`[Image Search] Openverse failed ("${item.query}"): ${error instanceof Error ? error.message : String(error)}`);
+        return [];
+      }),
+      searchCommons(item).catch((error) => {
+        console.warn(`[Image Search] Wikimedia Commons failed ("${item.query}"): ${error instanceof Error ? error.message : String(error)}`);
+        return [];
+      }),
+    ]);
+    return [...openverseResults, ...commonsResults];
   }));
-
-  if (batches.every((batch) => batch.length === 0)) {
-    throw new Error("Free image search services are unavailable or returned no usable openly licensed images. Check your internet connection and try again.");
-  }
 
   const unique = new Map<string, any>();
   for (const image of batches.flat()) {
     if (!unique.has(image.imageUrl)) unique.set(image.imageUrl, image);
   }
-  return { ok: true, articleId, queries: queries.map((item) => item.query), results: [...unique.values()].slice(0, 30) };
+  const results = [...unique.values()].slice(0, 60);
+  if (!results.length) {
+    throw new Error("No free, reusable images were returned. Try a shorter or more specific custom search phrase, and check your internet connection.");
+  }
+  return {
+    ok: true,
+    articleId,
+    queries: queries.map((item) => item.query),
+    results,
+  };
 });
