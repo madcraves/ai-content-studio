@@ -137,6 +137,10 @@ function App() {
   const [selectedSiteId, setSelectedSiteId] = useState<string>("");
 
   const [editingArticle, setEditingArticle] = useState<any>(null);
+  const [aiEditingArticle, setAiEditingArticle] = useState<any>(null);
+  const [aiEditInstructions, setAiEditInstructions] = useState("");
+  const [aiEditProviderId, setAiEditProviderId] = useState("");
+  const [aiEditLoading, setAiEditLoading] = useState(false);
 
   const [scheduleTopic, setScheduleTopic] = useState("");
   const [scheduleKeyword, setScheduleKeyword] = useState("");
@@ -659,6 +663,51 @@ function App() {
       notify(err?.message || "Unable to send article to WordPress.", true);
     } finally {
       setPublishingArticle(false);
+    }
+  }
+
+  function startAiEditingArticle(article: any) {
+    const available = providers.filter((item: any) => item.configured && item.enabled !== false);
+    setAiEditingArticle(article);
+    setAiEditInstructions("");
+    setAiEditProviderId(String(available[0]?.id || ""));
+  }
+
+  async function applyAiArticleEdit() {
+    if (!aiEditingArticle?.id) return;
+    if (!aiEditInstructions.trim()) {
+      notify("Enter the changes you want the AI to make.", true);
+      return;
+    }
+    if (!aiEditProviderId) {
+      notify("Configure and enable an AI provider before revising articles.", true);
+      return;
+    }
+    clearNotifications();
+    setAiEditLoading(true);
+    try {
+      const result = await studio.aiEditArticle({
+        articleId: Number(aiEditingArticle.id),
+        instructions: aiEditInstructions.trim(),
+        providerId: aiEditProviderId,
+      });
+      if (!result?.ok) throw new Error(result?.message || "AI article revision failed.");
+      const refreshed = await studio.listArticles();
+      const refreshedArticles = Array.isArray(refreshed) ? refreshed : [];
+      setArticles(refreshedArticles);
+      const revised = refreshedArticles.find((item: any) => Number(item.id) === Number(aiEditingArticle.id)) || result.article;
+      if (Number(generatedArticle?.id) === Number(revised.id)) {
+        setGeneratedArticle(revised);
+        setGeneratedOptions((items) => items.map((item) => Number(item.id) === Number(revised.id) ? revised : item));
+      }
+      if (Number(previewArticle?.id) === Number(revised.id)) setPreviewArticle(revised);
+      setAiEditingArticle(null);
+      setAiEditInstructions("");
+      notify("AI revision completed. The existing Article Library entry has been updated.");
+    } catch (err: any) {
+      notify(err?.message || "Unable to revise this article.", true);
+    } finally {
+      setAiEditLoading(false);
     }
   }
 
@@ -1219,6 +1268,40 @@ function App() {
                 </button>
               </div>
 
+              {aiEditingArticle && (
+                <section className="panel ai-article-edit-panel">
+                  <div className="panel-heading">
+                    <div>
+                      <span className="eyebrow-light">AI-POWERED CONTENT REVISION</span>
+                      <h3>AI Edit: {aiEditingArticle.title || "Selected Article"}</h3>
+                      <p>Describe exactly what you want changed. The AI will revise the existing article and update this same library entry.</p>
+                    </div>
+                    <button type="button" className="secondary-button" disabled={aiEditLoading} onClick={() => { setAiEditingArticle(null); setAiEditInstructions(""); }}>Close</button>
+                  </div>
+                  <div className="form-group">
+                    <label>Custom Editing Instructions</label>
+                    <textarea rows={7} value={aiEditInstructions} onChange={(event) => setAiEditInstructions(event.target.value)} placeholder="Example: Rewrite the introduction to make it more engaging, expand the section about benefits with practical details, improve natural keyword placement, remove repetitive sentences, and keep the tone professional and human." />
+                    <small>Be specific about the sections, tone, SEO improvements, length or wording you want changed. The full revised article will be returned.</small>
+                  </div>
+                  <div className="form-grid ai-edit-options">
+                    <div className="form-group">
+                      <label>AI Provider</label>
+                      <select value={aiEditProviderId} onChange={(event) => setAiEditProviderId(event.target.value)}>
+                        <option value="">Choose a configured provider</option>
+                        {providers.filter((item: any) => item.configured && item.enabled !== false).map((item: any) => <option key={item.id} value={String(item.id)}>{item.name} · {item.model}</option>)}
+                      </select>
+                    </div>
+                    <div className="ai-edit-note"><strong>Existing article stays in place</strong><span>Its saved title, content, excerpt and SEO fields will be updated. No duplicate article is created.</span></div>
+                  </div>
+                  <div className="button-row ai-edit-actions">
+                    <button type="button" className="primary-button" disabled={aiEditLoading || !aiEditInstructions.trim() || !aiEditProviderId} onClick={() => void applyAiArticleEdit()}>
+                      {aiEditLoading ? <><span className="button-spinner" /> Revising Article...</> : "✦ Apply AI Changes"}
+                    </button>
+                    <button type="button" className="secondary-button" disabled={aiEditLoading} onClick={() => { setAiEditingArticle(null); setAiEditInstructions(""); }}>Cancel</button>
+                  </div>
+                </section>
+              )}
+
               {editingArticle ? (
                 <section className="panel">
                   <div className="panel-heading">
@@ -1343,6 +1426,14 @@ function App() {
                           onClick={() => setEditingArticle({ ...article })}
                         >
                           Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          disabled={aiEditLoading}
+                          onClick={() => startAiEditingArticle(article)}
+                        >
+                          AI Edit
                         </button>
                         <button type="button" className="secondary-button" disabled={imageLoading} onClick={() => void startImageForArticle(article)}>
                           {imageLoading && Number(generatedArticle?.id) === Number(article.id) ? "Generating image..." : "Generate Blog Image"}
