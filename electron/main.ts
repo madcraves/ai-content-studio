@@ -169,7 +169,7 @@ function getBuiltinProviders() {
       id,
       name: defaults[id].name,
       provider: id,
-      model: saved?.model || defaults[id].model,
+      model: id === "gemini" && saved?.model === "gemini-3.8-flash" ? defaults[id].model : (saved?.model || defaults[id].model),
       apiKey: saved?.apiKey || defaults[id].apiKey,
       enabled: true,
       configured: Boolean((saved?.apiKey || defaults[id].apiKey || "").trim()),
@@ -210,6 +210,9 @@ function getProviderById(providerId: string) {
 
 async function testAIProvider(providerId: string) {
   const provider = getProviderById(providerId);
+  if (!provider.apiKey?.trim()) {
+    throw new Error(`${provider.name} API key is missing. Save a valid API key in AI Providers before testing.`);
+  }
 
   const controller = new AbortController();
 
