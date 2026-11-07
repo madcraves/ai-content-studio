@@ -349,6 +349,13 @@ export class Database {
       .get(id) as any;
   }
 
+  deleteArticle(id: number): any {
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new Error("A valid article ID is required.");
+    }
+    return this.db.prepare("DELETE FROM articles WHERE id = ?").run(id);
+  }
+
   setArticleImage(id: number, imagePath: string): any {
     return this.db.prepare(
       "UPDATE articles SET featured_image_path = ? WHERE id = ?"
