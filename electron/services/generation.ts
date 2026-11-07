@@ -12,6 +12,7 @@ export interface AIProvider {
   provider?: string;
   model: string;
   apiKey: string;
+  baseUrl?: string;
   enabled?: boolean;
 }
 
@@ -328,11 +329,12 @@ async function callOpenAICompatible(
   let endpoint = "";
 
   if (providerId === "groq") {
-    endpoint =
-      "https://api.groq.com/openai/v1/chat/completions";
+    endpoint = "https://api.groq.com/openai/v1/chat/completions";
   } else if (providerId === "openrouter") {
-    endpoint =
-      "https://openrouter.ai/api/v1/chat/completions";
+    endpoint = "https://openrouter.ai/api/v1/chat/completions";
+  } else if (providerId === "openai-compatible" && provider.baseUrl) {
+    const base = provider.baseUrl.trim().replace(/\\/+$/, "");
+    endpoint = base.endsWith("/chat/completions") ? base : `${base}/chat/completions`;
   } else {
     throw new Error(
       `Unsupported OpenAI-compatible provider: ${providerId}`
@@ -425,7 +427,8 @@ async function callAI(
     responseText = await callGemini(input, provider);
   } else if (
     providerId === "groq" ||
-    providerId === "openrouter"
+    providerId === "openrouter" ||
+    providerId === "openai-compatible"
   ) {
     responseText = await callOpenAICompatible(
       input,
@@ -561,4 +564,33 @@ export async function runParallelGeneration(
   );
 
   return successfulArticles;
+}
+
+
+// Multi-agent collaboration: each specialist receives and improves the previous draft.
+export async function runMultiAgentGeneration(input: GenerationInput, providers: AIProvider[]): Promise<GeneratedArticle[]> {
+  const active = (providers || []).filter((p) => p.enabled !== false && Boolean(p.apiKey?.trim()) && Boolean(p.model?.trim()));
+  if (!active.length) throw new Error("No active AI providers are configured for the agent team.");
+  const stages = [
+    { role: "Research Agent", task: "Create a research-led draft based on search intent. Identify key subtopics, entities, reader questions and secondary keywords. Never invent statistics or sources." },
+    { role: "SEO Strategist & Writer", task: "Improve the draft for search intent, topical completeness, headings, natural keyword coverage, examples and FAQs." },
+    { role: "Editorial Agent", task: "Improve clarity, readability, flow, tone and remove repetition while preserving useful detail and the requested length." },
+    { role: "Fact-Check & Final QA Agent", task: "Review factual consistency, qualify unsupported claims, check structure and produce the final publish-ready article. Never fabricate citations." },
+  ];
+  let previous: GeneratedArticle | null = null;
+  for (let i = 0; i < stages.length; i++) {
+    const stage = stages[i];
+    const provider = active[i % active.length];
+    const agentInput: GenerationInput = {
+      ...input,
+      instructions: [input.instructions || "",
+        `AGENT ROLE: ${stage.role}. ${stage.task}`,
+        previous ? `PREVIOUS AGENT DRAFT — improve it, do not summarize:\\nTitle: ${previous.title}\\nExcerpt: ${previous.excerpt}\\nHTML: ${previous.content}\\nKeywords: ${previous.keywords.join(", ")}` : "Start with a research-led outline and complete first draft.",
+        "Return the required JSON article object with valid WordPress HTML."
+      ].filter(Boolean).join("\\n\\n"),
+    };
+    previous = await generateWithRetry(agentInput, provider);
+  }
+  if (!previous) throw new Error("The multi-agent workflow did not produce an article.");
+  return [{ ...previous, provider: "multi-agent-team", model: stages.map((stage, i) => `${stage.role}: ${active[i % active.length].model}`).join(" → ") }];
 }
