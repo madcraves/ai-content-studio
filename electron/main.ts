@@ -48,7 +48,7 @@ function configureAutoUpdates() {
   autoUpdater.on("checking-for-update", () => sendUpdateStatus({ status: "checking" }));
   autoUpdater.on("update-available", (info) => sendUpdateStatus({ status: "downloading", version: info.version, message: "A new version is available. Downloading automatically..." }));
   autoUpdater.on("update-not-available", (info) => sendUpdateStatus({ status: "latest", version: info.version, message: "You are using the latest version." }));
-  autoUpdater.on("download-progress", (progress) => sendUpdateStatus({ status: "downloading", version: autoUpdater.updateInfo?.version, message: `Downloading update: ${Math.round(progress.percent)}%` }));
+  autoUpdater.on("download-progress", (progress) => sendUpdateStatus({ status: "downloading", version: updateStatus.version, message: `Downloading update: ${Math.round(progress.percent)}%` }));
   autoUpdater.on("update-downloaded", (info) => sendUpdateStatus({ status: "downloaded", version: info.version, message: `Version ${info.version} is ready to install.` }));
   autoUpdater.on("error", (error) => sendUpdateStatus({ status: "error", message: error.message || "Update check failed." }));
   setTimeout(() => void autoUpdater.checkForUpdates().catch((error) => sendUpdateStatus({ status: "error", message: error.message })), 8000);
