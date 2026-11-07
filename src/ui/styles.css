@@ -313,3 +313,22 @@ button:disabled{cursor:not-allowed;opacity:.58}
 .article-card .button-row button{flex:1 1 auto}
 @media(max-width:900px){.brief-three-col{grid-template-columns:repeat(2,minmax(0,1fr))}.image-studio-layout{grid-template-columns:1fr}.image-studio-preview{min-height:260px}.professional-generator .generator-stepper{flex-wrap:wrap}}
 @media(max-width:600px){.professional-brief-card{padding:15px}.professional-brief-form{gap:15px}.professional-brief-form .brief-two-col,.brief-three-col{grid-template-columns:1fr}.brief-footer{align-items:stretch;flex-direction:column}.brief-footer .agent-mode-toggle{max-width:none}.generate-article-cta{width:100%;min-width:0}.generation-success-panel{align-items:stretch;flex-direction:column}.generation-success-panel .primary-button{width:100%}.image-studio-section{padding:14px}.image-studio-layout{gap:14px}.image-studio-preview{min-height:210px;padding:8px}.image-api-shortcut{align-items:flex-start;flex-direction:column;gap:6px}}
+
+
+/* WordPress destination picker */
+.wordpress-publish-modal{z-index:1100}
+.wordpress-publish-card{width:min(620px,96vw);max-height:90vh;overflow:auto;padding:24px;border:1px solid #e5e4ef;border-radius:18px;background:var(--panel,#fff);box-shadow:0 24px 80px rgba(15,18,40,.28)}
+.wordpress-publish-card .panel-heading{align-items:flex-start;margin-bottom:18px}
+.wordpress-publish-card .panel-heading h3{margin:5px 0}
+.wordpress-publish-card .panel-heading p{margin:6px 0 0;color:var(--muted,#777)}
+.publish-article-summary{display:flex;flex-direction:column;gap:5px;padding:14px 16px;margin-bottom:14px;border:1px solid var(--border,#e6e6ef);border-radius:12px;background:var(--surface,#f8f8fc)}
+.publish-article-summary small,.wordpress-site-choice small{color:var(--muted,#777);overflow-wrap:anywhere}
+.wordpress-site-choice-list{display:grid;gap:10px}
+.wordpress-site-choice{display:flex;align-items:center;gap:12px;padding:14px;border:1px solid var(--border,#e3e3ed);border-radius:12px;cursor:pointer;transition:border-color .15s,background .15s}
+.wordpress-site-choice.selected{border-color:var(--accent,#5145cd);background:rgba(91,79,210,.07)}
+.wordpress-site-choice input{accent-color:var(--accent,#5145cd);width:17px;height:17px;flex:0 0 auto}
+.wordpress-site-choice-copy{display:flex;flex:1;min-width:0;flex-direction:column;gap:4px}
+.wordpress-site-choice-copy strong{overflow-wrap:anywhere}
+.site-choice-indicator{font-size:12px;font-weight:600;color:var(--accent,#5145cd)}
+.publish-modal-actions{justify-content:flex-end;margin-top:20px}
+@media(max-width:600px){.wordpress-publish-card{padding:16px}.wordpress-site-choice{padding:11px}.site-choice-indicator{display:none}.publish-modal-actions{flex-wrap:wrap}.publish-modal-actions button{flex:1}}
