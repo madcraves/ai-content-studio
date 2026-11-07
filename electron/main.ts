@@ -744,138 +744,78 @@ ipcMain.handle("schedule:delete", (_event, id: number) => {
 });
 
 // --------------------------------------------------
-// IMAGE GENERATION PROVIDERS
+// ARTICLE IMAGE SEARCH (WIKIMEDIA COMMONS)
 // --------------------------------------------------
 
-const IMAGE_PROVIDER_DEFINITIONS: Record<string, { name: string; model: string }> = {
-  "image-openai": { name: "OpenAI Images", model: "gpt-image-1" },
-  // Keep the existing provider ID so saved API keys continue working after the Imagen migration.
-  "image-imagen": { name: "Google Nano Banana 2", model: "gemini-3.1-flash-image" },
-};
-
-function getSavedImageProvider(providerId: string) {
-  const rows = db.getEnabledProviders()
-    .filter((row: any) => row.provider === providerId)
-    .sort((a: any, b: any) => Number(b.id) - Number(a.id));
-  if (!rows.length) throw new Error(`${IMAGE_PROVIDER_DEFINITIONS[providerId]?.name || providerId} API key is not configured.`);
-  const provider = decryptApiKey(rows[0]);
-  if (!provider.apiKey?.trim()) throw new Error(`${IMAGE_PROVIDER_DEFINITIONS[providerId]?.name || providerId} API key is empty.`);
-  return provider;
+function cleanImageSearchText(value: string): string {
+  return String(value || "").replace(/<[^>]*>/g, " ").replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/&amp;/gi, "&").replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'")
+    .replace(/[^\p{L}\p{N}\s-]/gu, " ").replace(/\s+/g, " ").trim().slice(0, 110);
 }
 
-ipcMain.handle("images:providers:list", () => {
+ipcMain.handle("images:search", async (_event, input) => {
   requireValidLicense();
-  return Object.entries(IMAGE_PROVIDER_DEFINITIONS).map(([id, definition]) => {
-    const row = db.getEnabledProviders()
-      .filter((item: any) => item.provider === id)
-      .sort((a: any, b: any) => Number(b.id) - Number(a.id))[0];
-    return { id, name: definition.name, model: definition.model, configured: Boolean(row?.api_key) };
-  });
-});
+  const articleId = Number(input?.articleId);
+  if (!Number.isInteger(articleId) || articleId <= 0) throw new Error("Select a saved article before searching for images.");
+  const article = db.getArticle(articleId);
+  if (!article) throw new Error("Article not found.");
 
-ipcMain.handle("images:providers:save", (_event, input) => {
-  requireValidLicense();
-  const definition = IMAGE_PROVIDER_DEFINITIONS[input?.providerId];
-  if (!definition) throw new Error("Select a supported image provider.");
-  if (typeof input?.apiKey !== "string" || !input.apiKey.trim()) {
-    throw new Error("Enter the image-generation API key.");
+  const html = String(article.content || "");
+  const headings = [...html.matchAll(/<h[2-3][^>]*>([\s\S]*?)<\/h[2-3]>/gi)]
+    .map((match) => cleanImageSearchText(match[1]))
+    .filter((value) => value.length > 8);
+  const title = cleanImageSearchText(article.title);
+  const keyword = cleanImageSearchText(article.focus_keyword || article.focusKeyword || "");
+  const queries = [
+    { query: [title, keyword].filter(Boolean).join(" "), section: "Featured / overall topic" },
+    ...headings.slice(0, 4).map((heading) => ({ query: heading, section: heading })),
+  ].filter((item) => item.query.length > 2);
+  if (!queries.length) throw new Error("The article does not contain enough topic information to search for images.");
+
+  const batches = await Promise.all(queries.map(async (item) => {
+    const params = new URLSearchParams({
+      action: "query",
+      format: "json",
+      generator: "search",
+      gsrnamespace: "6",
+      gsrsearch: item.query,
+      gsrlimit: "8",
+      prop: "imageinfo",
+      iiprop: "url|extmetadata",
+      iiurlwidth: "1000",
+    });
+    const response = await fetch("https://commons.wikimedia.org/w/api.php?" + params.toString(), {
+      headers: { "User-Agent": "MadCravesAIContentStudio/1.0 (https://madcraves.com)" },
+      signal: AbortSignal.timeout(25000),
+    });
+    const data: any = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data?.error?.info || `Wikimedia Commons returned HTTP ${response.status}.`);
+    return Object.values(data?.query?.pages || {}).map((page: any) => {
+      const info = page?.imageinfo?.[0];
+      const meta = info?.extmetadata || {};
+      const value = (key: string) => String(meta?.[key]?.value || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+      return {
+        id: String(page.pageid),
+        title: String(page.title || "").replace(/^File:/, ""),
+        imageUrl: info?.url || "",
+        thumbnailUrl: info?.thumburl || info?.url || "",
+        sourceUrl: info?.descriptionurl || "",
+        width: Number(info?.width || 0),
+        height: Number(info?.height || 0),
+        artist: value("Artist") || value("Credit") || "Unknown creator",
+        license: value("LicenseShortName") || "License not specified",
+        usageTerms: value("UsageTerms"),
+        attribution: value("Attribution") || value("Artist"),
+        description: value("ImageDescription") || String(page.title || "").replace(/^File:/, ""),
+        section: item.section,
+        searchQuery: item.query,
+      };
+    }).filter((image: any) => image.imageUrl && image.thumbnailUrl && image.width >= 600 && image.height >= 350);
+  }));
+
+  const unique = new Map<string, any>();
+  for (const image of batches.flat()) {
+    if (!unique.has(image.imageUrl)) unique.set(image.imageUrl, image);
   }
-  const encryption = encryptApiKey(input.apiKey.trim());
-  const existing = db.getEnabledProviders()
-    .filter((row: any) => row.provider === input.providerId)
-    .sort((a: any, b: any) => Number(b.id) - Number(a.id))[0];
-  db.saveProvider({
-    id: existing?.id,
-    name: definition.name,
-    provider: input.providerId,
-    model: definition.model,
-    apiKey: encryption.apiKey,
-    encrypted: encryption.encrypted,
-    enabled: true,
-  });
-  return { ok: true };
-});
-
-ipcMain.handle("images:get", (_event, articleId: number) => {
-  requireValidLicense();
-  const article = db.getArticle(Number(articleId));
-  if (!article?.featured_image_path || !fs.existsSync(article.featured_image_path)) return null;
-  const extension = path.extname(article.featured_image_path).toLowerCase();
-  const mime = extension === ".jpg" || extension === ".jpeg" ? "image/jpeg" : "image/png";
-  return `data:${mime};base64,${fs.readFileSync(article.featured_image_path).toString("base64")}`;
-});
-
-ipcMain.handle("images:generate", async (_event, input) => {
-  requireValidLicense();
-  const providerId = String(input?.providerId || "");
-  const definition = IMAGE_PROVIDER_DEFINITIONS[providerId];
-  if (!definition) throw new Error("Choose OpenAI Images or Google Imagen.");
-  const article = db.getArticle(Number(input?.articleId));
-  if (!article) throw new Error("Generate or select an article before creating its featured image.");
-  const prompt = String(input?.prompt || article.title || "").trim();
-  if (prompt.length < 5) throw new Error("Enter a more descriptive image prompt.");
-
-  const provider = getSavedImageProvider(providerId);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 120000);
-  let imageBase64 = "";
-  let mimeType = "image/png";
-
-  try {
-    let response: Response;
-    let data: any;
-    if (providerId === "image-openai") {
-      response = await fetch("https://api.openai.com/v1/images/generations", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${provider.apiKey}`, "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({ model: definition.model, prompt, size: "1536x1024", quality: "high", n: 1 }),
-      });
-      data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data?.error?.message || `OpenAI Images returned HTTP ${response.status}.`);
-      imageBase64 = data?.data?.[0]?.b64_json || "";
-    } else {
-      // Gemini Nano Banana image models use generateContent, not Imagen's predict endpoint.
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${definition.model}:generateContent?key=${encodeURIComponent(provider.apiKey)}`;
-      response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            responseModalities: ["TEXT", "IMAGE"],
-            imageConfig: { aspectRatio: "16:9", imageSize: "1K" },
-          },
-        }),
-      });
-      data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        const detail = data?.error?.message || `Google Nano Banana returned HTTP ${response.status}.`;
-        throw new Error(detail);
-      }
-      const parts = data?.candidates?.flatMap((candidate: any) => candidate?.content?.parts || []) || [];
-      const imagePart = parts.find((part: any) => part?.inlineData?.data || part?.inline_data?.data);
-      imageBase64 = imagePart?.inlineData?.data || imagePart?.inline_data?.data || "";
-      mimeType = imagePart?.inlineData?.mimeType || imagePart?.inline_data?.mime_type || "image/png";
-      if (!imageBase64) {
-        const providerText = parts.map((part: any) => part?.text).filter(Boolean).join(" ").trim();
-        throw new Error(providerText || "Google Nano Banana returned no image. Check that your API key has access to Gemini image generation.");
-      }
-    }
-    if (!imageBase64) throw new Error("The image provider returned no image data.");
-
-    const extension = mimeType.includes("jpeg") || mimeType.includes("jpg") ? ".jpg" : ".png";
-    const imageDir = path.join(app.getPath("userData"), "generated-images");
-    fs.mkdirSync(imageDir, { recursive: true });
-    const imagePath = path.join(imageDir, `article-${article.id}-${Date.now()}${extension}`);
-    fs.writeFileSync(imagePath, Buffer.from(imageBase64, "base64"));
-    db.setArticleImage(Number(article.id), imagePath);
-    return { ok: true, articleId: Number(article.id), imageDataUrl: `data:${mimeType};base64,${imageBase64}`, provider: providerId };
-  } catch (error: any) {
-    if (error?.name === "AbortError") throw new Error("Image generation timed out. Please try again.");
-    throw new Error(error?.message || "Image generation failed.");
-  } finally {
-    clearTimeout(timeout);
-  }
+  return { ok: true, articleId, queries: queries.map((item) => item.query), results: [...unique.values()].slice(0, 30) };
 });
