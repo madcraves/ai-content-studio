@@ -639,3 +639,41 @@ export async function runMultiAgentGeneration(input: GenerationInput, providers:
   if (!previous) throw new Error("The multi-agent workflow did not produce an article.");
   return [{ ...previous, provider: "multi-agent-team", model: stages.map((stage, i) => `${stage.role}: ${active[i % active.length].model}`).join(" → ") }];
 }
+
+
+// Revise an existing saved article using the user's instructions and one selected AI provider.
+export async function reviseArticleWithAI(
+  article: any,
+  instructions: string,
+  provider: AIProvider
+): Promise<GeneratedArticle> {
+  if (!article?.title || !article?.content) {
+    throw new Error("The saved article is missing its title or content.");
+  }
+  if (!instructions?.trim()) {
+    throw new Error("Enter custom instructions for the article revision.");
+  }
+  const plainText = String(article.content).replace(/<[^>]*>/g, " ").replace(/\\s+/g, " ").trim();
+  const estimatedWords = plainText ? plainText.split(" ").length : 2000;
+  const revisionInput: GenerationInput = {
+    topic: String(article.title),
+    keyword: String(article.focus_keyword || article.focusKeyword || article.title),
+    wordCount: Math.max(300, Math.min(10000, estimatedWords)),
+    tone: "Preserve the article's existing tone unless the instructions request a change",
+    instructions: [
+      "TASK: Revise the existing article below. This is an EDIT of an existing saved article, not a new article from scratch.",
+      "Apply the user's custom instructions carefully and return the complete revised article, not a summary or a list of suggestions.",
+      "Preserve all accurate, useful information and the original subject. Do not invent facts, statistics, quotes, citations, sources, or links. Keep valid HTML suitable for WordPress.",
+      "Keep the original article's SEO purpose and primary keyword unless the user explicitly asks to change them. Improve title, excerpt, SEO metadata and keywords when appropriate.",
+      "EXISTING ARTICLE TITLE: " + String(article.title),
+      "EXISTING EXCERPT: " + String(article.excerpt || ""),
+      "EXISTING META TITLE: " + String(article.meta_title || article.metaTitle || ""),
+      "EXISTING META DESCRIPTION: " + String(article.meta_description || article.metaDescription || ""),
+      "EXISTING FOCUS KEYWORD: " + String(article.focus_keyword || article.focusKeyword || ""),
+      "EXISTING KEYWORDS: " + String(article.keywords || ""),
+      "USER'S CUSTOM EDITING INSTRUCTIONS: " + instructions.trim(),
+      "EXISTING ARTICLE HTML (revise this content):\n" + String(article.content),
+    ].join("\n\n"),
+  };
+  return generateWithRetry(revisionInput, provider);
+}
