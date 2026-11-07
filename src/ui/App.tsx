@@ -84,6 +84,9 @@ function App() {
     Record<string, string>
   >({});
   const [providerLoading, setProviderLoading] = useState<string | null>(null);
+  const [providerKeyInputs, setProviderKeyInputs] = useState<Record<string, string>>({});
+  const [providerModelInputs, setProviderModelInputs] = useState<Record<string, string>>({});
+  const [providerSaving, setProviderSaving] = useState<string | null>(null);
   const [manualProviderName, setManualProviderName] = useState("");
   const [manualProviderModel, setManualProviderModel] = useState("");
   const [manualProviderBaseUrl, setManualProviderBaseUrl] = useState("");
@@ -286,6 +289,37 @@ function App() {
       notify(err?.message || "Provider connection test failed.", true);
     } finally {
       setProviderLoading(null);
+    }
+  }
+
+  async function saveBuiltinProvider(provider: any) {
+    clearNotifications();
+    const apiKey = providerKeyInputs[provider.id]?.trim();
+    const model = (providerModelInputs[provider.id] || provider.model || "").trim();
+    if (!apiKey) {
+      notify(`Enter your ${provider.name} API key first.`, true);
+      return;
+    }
+    if (!model) {
+      notify("Enter a valid model ID.", true);
+      return;
+    }
+    setProviderSaving(provider.id);
+    try {
+      await studio.saveProvider({
+        name: provider.name,
+        provider: provider.id,
+        model,
+        apiKey,
+        enabled: true,
+      });
+      setProviderKeyInputs((current) => ({ ...current, [provider.id]: "" }));
+      await loadData(true);
+      notify(`${provider.name} settings saved. Test the connection before generating articles.`);
+    } catch (err: any) {
+      notify(err?.message || `Unable to save ${provider.name} settings.`, true);
+    } finally {
+      setProviderSaving(null);
     }
   }
 
@@ -1404,19 +1438,6 @@ function App() {
           {/* AI PROVIDERS */}
           {page === "AI Providers" && (
             <>
-              <section className="panel manual-provider-panel">
-                <div className="panel-heading"><div><h3>Add a Custom AI Provider</h3><p>Connect any OpenAI-compatible API endpoint using your own API key and model ID.</p></div><span className="status-badge">Manual API</span></div>
-                <form onSubmit={saveManualProvider}>
-                  <div className="form-grid">
-                    <div className="form-group"><label>Provider Name *</label><input value={manualProviderName} onChange={(event) => setManualProviderName(event.target.value)} placeholder="e.g. Together AI, Fireworks, Local LLM" required /></div>
-                    <div className="form-group"><label>Model ID *</label><input value={manualProviderModel} onChange={(event) => setManualProviderModel(event.target.value)} placeholder="e.g. meta-llama/Llama-3.3-70B-Instruct" required /></div>
-                    <div className="form-group full-width"><label>API Base URL *</label><input type="url" value={manualProviderBaseUrl} onChange={(event) => setManualProviderBaseUrl(event.target.value)} placeholder="https://api.provider.com/v1" required /><small>Enter the API base URL ending in /v1, or the full /chat/completions endpoint.</small></div>
-                    <div className="form-group full-width"><label>API Key *</label><input type="password" value={manualProviderApiKey} onChange={(event) => setManualProviderApiKey(event.target.value)} placeholder="Paste your provider API key" required autoComplete="off" /></div>
-                  </div>
-                  <div className="form-footer"><small className="muted">API keys are stored using Electron secure storage when available. Keys are never shown in the provider list.</small><button type="submit" className="primary-button" disabled={manualProviderSaving}>{manualProviderSaving ? "Saving..." : "+ Save Custom Provider"}</button></div>
-                </form>
-              </section>
-
               <section className="panel"><div className="panel-heading"><div><h3>Available AI Providers</h3><p>Built-in providers and your manually configured APIs.</p></div><span className="connected">{providers.length} providers available</span></div></section>
 
               <div className="provider-grid">
@@ -1439,14 +1460,43 @@ function App() {
                     </div>
 
                     <div className="form-group">
-                      <label>Configured Model</label>
-                      <input value={provider.model} readOnly />
+                      <label>Model ID</label>
+                      <input
+                        value={providerModelInputs[provider.id] ?? provider.model}
+                        onChange={(event) => setProviderModelInputs((current) => ({ ...current, [provider.id]: event.target.value }))}
+                        placeholder="Enter model ID"
+                      />
                     </div>
 
+                    {provider.builtIn && (
+                      <div className="form-group provider-key-field">
+                        <label>API Key</label>
+                        <input
+                          type="password"
+                          value={providerKeyInputs[provider.id] || ""}
+                          onChange={(event) => setProviderKeyInputs((current) => ({ ...current, [provider.id]: event.target.value }))}
+                          placeholder={provider.configured ? "Saved securely — enter to replace" : "Paste your API key"}
+                          autoComplete="new-password"
+                        />
+                        <small>{provider.configured ? "An API key is saved. Leave blank to keep it unchanged." : "API key required to activate this provider."}</small>
+                      </div>
+                    )}
+
                     <p className="provider-saved">
-                      <span className="status-dot online" />
-                      {provider.builtIn ? "Built-in API configuration" : "Manual API configuration"}
+                      <span className={`status-dot ${provider.configured ? "online" : "offline"}`} />
+                      {provider.configured ? "API key saved securely" : "API key not configured"}
                     </p>
+
+                    {provider.builtIn && (
+                      <button
+                        type="button"
+                        className="primary-button"
+                        disabled={providerSaving === provider.id}
+                        onClick={() => void saveBuiltinProvider(provider)}
+                      >
+                        {providerSaving === provider.id ? "Saving..." : "Save Provider"}
+                      </button>
+                    )}
 
                     <button
                       type="button"
