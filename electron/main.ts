@@ -428,41 +428,17 @@ app.whenReady().then(() => {
 
   startScheduler(db, async (scheduleId: number) => {
     requireValidLicense();
-
     const schedule = db.getSchedule(scheduleId);
-
     if (!schedule) return;
-
-    const providers = getBuiltinProviders();
-
-    if (providers.length === 0) {
-      throw new Error(
-        "No built-in AI providers are configured. Check api-keys.ts."
-      );
-    }
-
-    const jobId = db.createJob({
-      topic: schedule.topic,
-      siteId: schedule.site_id,
-    });
-
-    try {
-      const results = await runParallelGeneration(
-        {
-          topic: schedule.topic,
-          keyword: schedule.keyword || schedule.topic,
-          wordCount: 2000,
-        },
-        providers
-      );
-
-      db.saveGenerationResults(jobId, results);
-
-      win?.webContents.send("job:scheduled", scheduleId);
-    } catch (error: any) {
-      db.failJob(jobId, error?.message || String(error));
-      throw error;
-    }
+    const articleId = Number(schedule.article_id);
+    const siteId = Number(schedule.site_id);
+    const article = articleId > 0 ? db.getArticle(articleId) : null;
+    const site = siteId > 0 ? db.getSite(siteId) : null;
+    if (!article) throw new Error("Scheduled article no longer exists.");
+    if (!site) throw new Error("Scheduled WordPress website no longer exists.");
+    await publishDraft(site, article);
+    db.markPublished(articleId);
+    win?.webContents.send("job:scheduled", scheduleId);
   });
 
   createWindow();
