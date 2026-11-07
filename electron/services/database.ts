@@ -256,7 +256,7 @@ export class Database {
         encrypted,
         enabled
       )
-      VALUES (?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
       provider.name,
       provider.provider,
