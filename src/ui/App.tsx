@@ -91,6 +91,7 @@ function App() {
   const [imagePrompt, setImagePrompt] = useState("");
   const [imageLoading, setImageLoading] = useState(false);
   const [generatedImage, setGeneratedImage] = useState("");
+  const [imageSectionFocus, setImageSectionFocus] = useState(false);
   const [previewArticle, setPreviewArticle] = useState<any>(null);
   const [previewImage, setPreviewImage] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -238,6 +239,13 @@ function App() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (page === "Article Library" && imageSectionFocus) {
+      window.requestAnimationFrame(() => document.getElementById("image-generation-section")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+      setImageSectionFocus(false);
+    }
+  }, [page, imageSectionFocus]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setLicenseClock(Date.now()), 1000);
@@ -539,18 +547,30 @@ function App() {
     }
   }
 
-  async function generateFeaturedImage() {
-    if (!generatedArticle?.id) {
-      notify("Generate an article first, then create its featured image.", true);
+  async function startImageForArticle(article: any) {
+    if (!article?.id) return;
+    const articlePrompt = `Create a professional, original, high-quality editorial featured image for this blog article: ${article.title || "Blog article"}. Visual context: ${String(article.content || "").replace(/<[^>]*>/g, " ").slice(0, 1200)}. No text, no watermark, wide landscape composition.`;
+    setGeneratedArticle(article);
+    setImagePrompt(articlePrompt);
+    setGeneratedImage("");
+    setPage("Article Library");
+    setImageSectionFocus(true);
+    await generateFeaturedImage(article, articlePrompt);
+  }
+
+  async function generateFeaturedImage(articleOverride?: any, promptOverride?: string) {
+    const article = articleOverride || generatedArticle;
+    if (!article?.id) {
+      notify("Select an article first, then create its featured image.", true);
       return;
     }
     clearNotifications();
     setImageLoading(true);
     try {
       const result = await studio.generateImage({
-        articleId: Number(generatedArticle.id),
+        articleId: Number(article.id),
         providerId: selectedImageProvider,
-        prompt: imagePrompt.trim() || generatedArticle.title,
+        prompt: (promptOverride || imagePrompt).trim() || article.title,
       });
       if (!result?.ok || !result?.imageDataUrl) throw new Error(result?.message || "Image generation failed.");
       setGeneratedImage(result.imageDataUrl);
@@ -1091,27 +1111,23 @@ function App() {
 
           {/* AI ARTICLE GENERATOR */}
           {page === "AI Article Generator" && (
-            <section className="generator-workspace">
+            <section className="generator-workspace professional-generator">
               <div className="generator-heading">
                 <div>
-                  <span className="eyebrow-light">CONTENT CREATION WORKSPACE</span>
-                  <h1>AI Article Studio</h1>
-                  <p>Build your SEO brief, review the generated content and choose where to publish.</p>
+                  <span className="eyebrow-light">MADCRAVES CONTENT WORKSPACE</span>
+                  <h1>AI Article Generator</h1>
+                  <p>Create a complete SEO-focused article brief and generate content with your preferred AI providers.</p>
                 </div>
-                <div className="generator-stepper">
-                  <span className="step-active"><b>01</b> Article brief</span>
-                  <span className={generatedArticle ? "step-active" : ""}><b>02</b> Review article</span>
-                  <span><b>03</b> Publishing</span>
-                </div>
+                <div className="generator-stepper"><span className="step-active"><b>01</b> Brief</span><span><b>02</b> Library</span><span><b>03</b> Image Studio</span></div>
               </div>
 
-              <div className="generator-columns">
-                <section className="brief-card">
-                  <div className="generator-card-title">
-                    <div className="section-number">01</div>
-                    <div><h3>Article Brief</h3><p>Tell the AI what to write.</p></div>
-                  </div>
-                  <form onSubmit={generateArticle} className="brief-form">
+              <section className="brief-card professional-brief-card">
+                <div className="generator-card-title">
+                  <div className="section-number">01</div>
+                  <div><h3>Article Brief</h3><p>Set the topic, SEO target and writing requirements.</p></div>
+                </div>
+                <form onSubmit={generateArticle} className="brief-form professional-brief-form">
+                  <div className="brief-two-col">
                     <div className="form-group">
                       <label>Article Topic <span>*</span></label>
                       <input value={topic} onChange={(event) => setTopic(event.target.value)} placeholder="e.g. Complete Guide to Umrah Packages" required />
@@ -1120,135 +1136,55 @@ function App() {
                       <label>Primary SEO Keyword <span>*</span></label>
                       <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="Enter your main keyword" required />
                     </div>
-                    <div className="brief-two-col">
-                      <div className="form-group">
-                        <label>Target Word Count</label>
-                        <select value={wordCount} onChange={(event) => setWordCount(event.target.value)}>
-                          <option value="500">500 words</option><option value="1000">1,000 words</option><option value="1500">1,500 words</option><option value="2000">2,000 words</option><option value="2500">2,500 words</option><option value="3000">3,000 words</option><option value="4000">4,000 words</option><option value="5000">5,000 words</option>
-                        </select>
-                      </div>
-                      <div className="form-group">
-                        <label>Writing Tone</label>
-                        <select value={tone} onChange={(event) => setTone(event.target.value)}>
-                          <option>Professional</option><option>Informative</option><option>Conversational</option><option>Friendly</option><option>Persuasive</option><option>Technical</option><option>Academic</option>
-                        </select>
-                      </div>
+                  </div>
+                  <div className="brief-three-col">
+                    <div className="form-group">
+                      <label>Target Word Count</label>
+                      <select value={wordCount} onChange={(event) => setWordCount(event.target.value)}>
+                        <option value="500">500 words</option><option value="1000">1,000 words</option><option value="1500">1,500 words</option><option value="2000">2,000 words</option><option value="2500">2,500 words</option><option value="3000">3,000 words</option><option value="4000">4,000 words</option><option value="5000">5,000 words</option><option value="7500">7,500 words</option><option value="10000">10,000 words</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Writing Tone</label>
+                      <select value={tone} onChange={(event) => setTone(event.target.value)}>
+                        <option>Professional</option><option>Informative</option><option>Conversational</option><option>Friendly</option><option>Persuasive</option><option>Technical</option><option>Academic</option>
+                      </select>
                     </div>
                     <div className="form-group">
                       <label>AI Provider</label>
                       <select value={selectedArticleProvider} onChange={(event) => setSelectedArticleProvider(event.target.value)}>
+                        <option value="all">All Available Providers</option>
                         {providers.filter((provider: any) => !String(provider.id).startsWith("image-")).map((provider: any) => (
-                          <option key={provider.id} value={provider.id} disabled={!provider.configured}>
+                          <option key={provider.id} value={provider.id} disabled={!provider.configured || provider.enabled === false}>
                             {provider.name}{provider.configured ? "" : " — API key not saved"}
                           </option>
                         ))}
                       </select>
-                      <small>Only the selected provider will generate this article. Configure its API key in AI Providers.</small>
+                      <small>{selectedArticleProvider === "all" ? "Uses every enabled provider with a saved API key." : "Only the selected provider will generate this article."}</small>
                     </div>
-                    <div className="form-group brief-instructions">
-                      <label>Additional Instructions</label>
-                      <textarea rows={5} value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="Audience, brand details, style preferences, SEO instructions and other requirements..." />
-                    </div>
+                  </div>
+                  <div className="form-group brief-instructions professional-instructions">
+                    <label>Custom Instructions <span className="optional-label">OPTIONAL</span></label>
+                    <textarea rows={6} value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="Add your brand voice, target audience, competitor context, required headings, internal-link guidance, SEO requirements or anything else the AI should follow..." />
+                  </div>
+                  <div className="brief-footer">
                     <label className="agent-mode-toggle">
                       <input type="checkbox" checked={multiAgent} onChange={(event) => setMultiAgent(event.target.checked)} />
-                      <span><strong>Multi-Agent Workflow</strong><small>Research → SEO Strategy → Writing → Editing → Fact-checking</small></span>
+                      <span><strong>Advanced Multi-Agent Workflow</strong><small>Research · SEO strategy · Writing · Editing · Fact-checking</small></span>
                     </label>
-                    <div className="brief-submit">
-                      <span>AI output is saved to your Article Library automatically.</span>
-                      <button type="submit" className="primary-button" disabled={articleLoading}>
-                        {articleLoading ? <><span className="button-spinner" /> Generating...</> : "✦ Generate Article"}
-                      </button>
-                    </div>
-                  </form>
-                </section>
-
-                <div className="generated-column">
-                  <section className="generated-card">
-                    <div className="generator-card-title generated-title-row">
-                      <div className="section-number">02</div>
-                      <div><h3>Generated Article</h3><p>Preview and select an AI result.</p></div>
-                      {generatedArticle && <span className="status-badge">Ready to review</span>}
-                    </div>
-                    {generatedOptions.length > 1 && (
-                      <div className="form-group result-selector">
-                        <label>AI generated versions</label>
-                        <select value={String(generatedArticle?.id || "")} onChange={(event) => setGeneratedArticle(generatedOptions.find((item: any) => String(item.id) === event.target.value) || null)}>
-                          {generatedOptions.map((item: any) => <option key={item.id} value={String(item.id)}>{item.provider || "AI"} · {item.title}</option>)}
-                        </select>
-                      </div>
-                    )}
-                    {generatedArticle ? (
-                      <>
-                        <div className="article-preview-meta"><span>{generatedArticle.provider || "AI generated"}</span><span>{generatedArticle.model || "Generated content"}</span><span>{generatedArticle.status || "Generated"}</span></div>
-                        <h2 className="generated-article-title">{generatedArticle.title}</h2>
-                        <p className="generated-excerpt">{generatedArticle.excerpt || "No excerpt returned by the provider."}</p>
-                        <iframe className="article-preview-frame" title="Generated article preview" sandbox="" srcDoc={String(generatedArticle.content || "")} />
-                        <div className="generated-actions">
-                          <button type="button" className="secondary-button" onClick={() => { setEditingArticle({ ...generatedArticle }); setPage("Article Library"); }}>Edit Article</button>
-                          <button type="button" className="text-button" onClick={() => setPage("Article Library")}>Open Article Library →</button>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="generated-empty">
-                        <div className="empty-preview-icon">✦</div>
-                        <h3>Your article preview will appear here</h3>
-                        <p>Complete the brief and select Generate Article. Your saved article will appear in this panel for review.</p>
-                      </div>
-                    )}
-                  </section>
-
-                  <section className="blog-image-card">
-                    <div className="generator-card-title">
-                      <div className="section-number image-number">03</div>
-                      <div><h3>Blog Image Generator</h3><p>Create a featured image with OpenAI or Google Imagen.</p></div>
-                      <span className={imageProviders.some((item: any) => item.id === selectedImageProvider && item.configured) ? "connected" : "coming-soon-label"}>
-                        {imageProviders.some((item: any) => item.id === selectedImageProvider && item.configured) ? "API ready" : "API setup needed"}
-                      </span>
-                    </div>
-                    <div className="image-tool-controls">
-                      <div className="form-group">
-                        <label>Image Provider</label>
-                        <select value={selectedImageProvider} onChange={(event) => setSelectedImageProvider(event.target.value)}>
-                          {imageProviders.map((provider: any) => (
-                            <option key={provider.id} value={provider.id}>{provider.name}{provider.configured ? "" : " — configure API key"}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="form-group">
-                        <label>Image Prompt</label>
-                        <textarea rows={2} value={imagePrompt} onChange={(event) => setImagePrompt(event.target.value)} placeholder={generatedArticle?.title || "Describe the featured image you want..."} />
-                      </div>
-                      <button type="button" className="primary-button" disabled={!generatedArticle?.id || imageLoading || !imageProviders.some((item: any) => item.id === selectedImageProvider && item.configured)} onClick={() => void generateFeaturedImage()}>
-                        {imageLoading ? <><span className="button-spinner" /> Generating Image...</> : "✦ Generate Featured Image"}
-                      </button>
-                    </div>
-                    {generatedImage ? (
-                      <img className="generated-featured-image" src={generatedImage} alt="Generated featured image" />
-                    ) : (
-                      <div className="image-placeholder">
-                        <div className="image-placeholder-art"><span>✧</span><i /><b /></div>
-                        <div><strong>Featured image workspace</strong><small>Save an OpenAI Images or Google Imagen API key in AI Providers to begin.</small></div>
-                      </div>
-                    )}
-                  </section>
-                </div>
-              </div>
-
-              <section className="publishing-card">
-                <div className="publishing-copy">
-                  <div className="section-number publish-number">04</div>
-                  <div><h3>Publishing Destination</h3><p>Choose a connected WordPress website. Your article will be saved as a draft.</p></div>
-                </div>
-                <div className="publishing-controls">
-                  <select aria-label="Publishing destination" value={selectedSiteId} onChange={(event) => setSelectedSiteId(event.target.value)} disabled={!sites.length}>
-                    <option value="">{sites.length ? "Select a website" : "No website connected — add one in Websites"}</option>
-                    {sites.map((site: any) => <option key={site.id} value={String(site.id)}>{site.name} · {site.url}</option>)}
-                  </select>
-                  <button type="button" className="primary-button" disabled={!generatedArticle?.id || !selectedSiteId || publishingArticle} onClick={() => void publishGeneratedArticle()}>
-                    {publishingArticle ? "Sending draft..." : "Send to WordPress Draft"}
-                  </button>
-                </div>
+                    <button type="submit" className="primary-button generate-article-cta" disabled={articleLoading}>
+                      {articleLoading ? <><span className="button-spinner" /> Generating Article...</> : "✦ Generate Article"}
+                    </button>
+                  </div>
+                </form>
               </section>
+
+              {generatedArticle && (
+                <section className="panel generation-success-panel">
+                  <div><span className="connected">Article generated and saved</span><h3>{generatedArticle.title || "Your article is ready"}</h3><p>Your content is available in Article Library. You can review, edit, publish or create a featured image from there.</p></div>
+                  <button type="button" className="primary-button" onClick={() => setPage("Article Library")}>Open Article Library →</button>
+                </section>
+              )}
             </section>
           )}
 
@@ -1395,6 +1331,9 @@ function App() {
                         >
                           Edit
                         </button>
+                        <button type="button" className="secondary-button" disabled={imageLoading} onClick={() => void startImageForArticle(article)}>
+                          {imageLoading && Number(generatedArticle?.id) === Number(article.id) ? "Generating image..." : "Generate Blog Image"}
+                        </button>
 
                         <button
                           type="button"
@@ -1409,6 +1348,46 @@ function App() {
                   ))}
                 </div>
               )}
+              <section className="panel image-studio-section" id="image-generation-section">
+                <div className="panel-heading">
+                  <div><span className="eyebrow-light">VISUAL CONTENT WORKSPACE</span><h3>Image Generation Studio</h3><p>Create a blog-specific featured image using OpenAI Images or Google Imagen.</p></div>
+                  <span className={imageProviders.some((item: any) => item.id === selectedImageProvider && item.configured) ? "connected" : "coming-soon-label"}>{imageProviders.some((item: any) => item.id === selectedImageProvider && item.configured) ? "API ready" : "API setup needed"}</span>
+                </div>
+                <div className="image-studio-layout">
+                  <div className="image-studio-controls">
+                    <div className="form-group">
+                      <label>Select Blog Article</label>
+                      <select value={String(generatedArticle?.id || "")} onChange={(event) => {
+                        const chosen = articles.find((item: any) => String(item.id) === event.target.value) || null;
+                        setGeneratedArticle(chosen);
+                        setImagePrompt(chosen ? `Create a professional, original, high-quality editorial featured image for this blog article: ${chosen.title}. Visual context: ${String(chosen.content || "").replace(/<[^>]*>/g, " ").slice(0, 1200)}. No text, no watermark, wide landscape composition.` : "");
+                        setGeneratedImage("");
+                      }}>
+                        <option value="">Choose an article</option>
+                        {articles.map((item: any) => <option key={item.id} value={String(item.id)}>{item.title || "Untitled article"}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Image Provider</label>
+                      <select value={selectedImageProvider} onChange={(event) => setSelectedImageProvider(event.target.value)}>
+                        {imageProviders.map((provider: any) => <option key={provider.id} value={provider.id}>{provider.name}{provider.configured ? "" : " — configure API key"}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Image Prompt / Art Direction</label>
+                      <textarea rows={7} value={imagePrompt} onChange={(event) => setImagePrompt(event.target.value)} placeholder="Select an article to automatically create a relevant image prompt, or write your own art direction..." />
+                      <small>When launched from an article card, the prompt is prepared automatically using its title and content.</small>
+                    </div>
+                    <button type="button" className="primary-button" disabled={!generatedArticle?.id || imageLoading || !imageProviders.some((item: any) => item.id === selectedImageProvider && item.configured)} onClick={() => void generateFeaturedImage()}>
+                      {imageLoading ? <><span className="button-spinner" /> Generating Image...</> : "✦ Generate Featured Image"}
+                    </button>
+                  </div>
+                  <div className="image-studio-preview">
+                    {generatedImage ? <img className="generated-featured-image" src={generatedImage} alt="Generated featured image" /> : <div className="image-placeholder"><div className="image-placeholder-art"><span>✧</span><i /><b /></div><div><strong>Your featured image will appear here</strong><small>Select a blog and generate a new image. It will be saved with that article.</small></div></div>}
+                  </div>
+                </div>
+                <div className="image-api-shortcut"><span>Need to configure image APIs?</span><button type="button" className="text-button" onClick={() => setPage("AI Providers")}>Open AI Providers →</button></div>
+              </section>
             </>
           )}
 
