@@ -167,7 +167,7 @@ export async function publishDraft(site: WordPressSite, article: Article) {
     try { const host = new URL(value).hostname.toLowerCase(); return host === "upload.wikimedia.org"; }
     catch { return false; }
   };
-  const uploadRemoteImage = async (imageUrl: string, altText: string) => {
+  const uploadRemoteImage = async (imageUrl: string, altText: string, attribution = "") => {
     if (!allowedImageHost(imageUrl)) throw new Error("An article image has an unsupported source URL.");
     const imageResponse = await fetch(imageUrl, { signal: AbortSignal.timeout(30000) });
     if (!imageResponse.ok) throw new Error(`Unable to download an article image (HTTP ${imageResponse.status}).`);
@@ -195,7 +195,7 @@ export async function publishDraft(site: WordPressSite, article: Article) {
     await fetch(`${base}/wp-json/wp/v2/media/${media.id}`, {
       method: "POST",
       headers: { Authorization: authorization, "Content-Type": "application/json" },
-      body: JSON.stringify({ alt_text: altText }),
+      body: JSON.stringify({ alt_text: altText, caption: attribution, description: attribution }),
       signal: AbortSignal.timeout(20000),
     });
     return { id: Number(media.id), url: String(media.source_url || imageUrl) };
@@ -207,7 +207,7 @@ export async function publishDraft(site: WordPressSite, article: Article) {
   if (featuredMarker?.[1]) {
     try {
       const featured = JSON.parse(decodeURIComponent(featuredMarker[1]));
-      const uploaded = await uploadRemoteImage(String(featured.url || ""), String(featured.alt || article.title));
+      const uploaded = await uploadRemoteImage(String(featured.url || ""), String(featured.alt || article.title), String(featured.attribution || featured.artist || ""));
       featuredMediaId = uploaded.id;
     } catch (error: any) {
       throw new Error(`Featured image upload failed: ${error?.message || String(error)}`);
