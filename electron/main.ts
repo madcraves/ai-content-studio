@@ -234,9 +234,9 @@ async function testAIProvider(providerId: string) {
         ? "https://api.groq.com/openai/v1/chat/completions"
         : provider.id === "openrouter"
           ? "https://openrouter.ai/api/v1/chat/completions"
-          : provider.baseUrl?.replace(/\\/+$/, "").endsWith("/chat/completions")
-            ? provider.baseUrl.replace(/\\/+$/, "")
-            : `${provider.baseUrl?.replace(/\\/+$/, "")}/chat/completions`;
+          : provider.baseUrl?.replace(/\/+$/, "").endsWith("/chat/completions")
+            ? provider.baseUrl.replace(/\/+$/, "")
+            : `${provider.baseUrl?.replace(/\/+$/, "")}/chat/completions`;
 
       response = await fetch(endpoint, {
         method: "POST",
