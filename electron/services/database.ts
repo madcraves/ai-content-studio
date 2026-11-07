@@ -38,6 +38,7 @@ export class Database {
         name TEXT NOT NULL,
         provider TEXT NOT NULL,
         model TEXT NOT NULL,
+        base_url TEXT,
         api_key TEXT,
         encrypted INTEGER DEFAULT 0,
         enabled INTEGER DEFAULT 1,
