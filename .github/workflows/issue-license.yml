@@ -1,0 +1,58 @@
+name: Generate Customer License
+
+on:
+  workflow_dispatch:
+    inputs:
+      customer_name:
+        description: "Customer name"
+        required: true
+        type: string
+
+      customer_machine_id:
+        description: "Customer Machine ID"
+        required: true
+        type: string
+
+      license_duration:
+        description: "License duration"
+        required: true
+        type: choice
+        options:
+          - "30"
+          - "90"
+          - "180"
+          - "365"
+          - "lifetime"
+
+permissions:
+  contents: read
+
+jobs:
+  generate-license:
+    name: Generate Signed License
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Generate Customer License
+        env:
+          LICENSE_PRIVATE_KEY: ${{ secrets.LICENSE_PRIVATE_KEY }}
+          CUSTOMER_NAME: ${{ inputs.customer_name }}
+          CUSTOMER_MACHINE_ID: ${{ inputs.customer_machine_id }}
+          LICENSE_DURATION: ${{ inputs.license_duration }}
+        run: node license-issuer.js
+
+      - name: Upload License File
+        uses: actions/upload-artifact@v4
+        with:
+          name: Customer-License
+          path: issued-licenses/*.txt
+          if-no-files-found: error
+          retention-days: 90
