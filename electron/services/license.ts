@@ -15,7 +15,7 @@ const LICENSE_VERSION = 1;
 // This is the PUBLIC key only.
 // The matching private signing key must never be included in the app.
 const PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEAc8QT9OrPH9FJO08JuCal+ue6nzaBHvVn6Mq6kfa2FLo=
+MCowBQYDK2VwAyEAHgRE7mM9G5nvt24l0MDleYw43CFgtg+yx/aDE6jdPJo=
 -----END PUBLIC KEY-----`;
 
 export type LicensePayload = {
