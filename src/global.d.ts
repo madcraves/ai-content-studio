@@ -6,7 +6,6 @@ declare global {
     name: string;
     url: string;
     token?: string;
-    created_at?: string;
   }
 
   interface AIProvider {
@@ -21,6 +20,8 @@ declare global {
     id: number;
     title: string;
     content: string;
+    provider?: string;
+    model?: string;
     excerpt?: string;
     slug?: string;
     meta_title?: string;
@@ -29,87 +30,56 @@ declare global {
     keywords?: string;
     status?: string;
     created_at?: string;
-    updated_at?: string;
   }
 
   interface Schedule {
     id: number;
     title?: string;
-    topic?: string;
-    siteId?: number;
-    site_id?: number;
     run_at: string;
     enabled: boolean;
-    created_at?: string;
+    [key: string]: unknown;
   }
 
   interface DashboardStats {
     totalArticles?: number;
     scheduled?: number;
-    totalSites?: number;
-    totalProviders?: number;
     [key: string]: unknown;
   }
 
-  interface GenerateArticleInput {
-    topic: string;
-    keyword?: string;
-    wordCount?: number;
-    tone?: string;
-    instructions?: string;
-  }
-
-  interface PublishArticleInput {
-    articleId: number;
-    siteId: number;
+  interface LicenseStatus {
+    activated: boolean;
+    valid: boolean;
+    machineId: string;
+    licensee?: string;
+    message?: string;
   }
 
   interface StudioAPI {
+    getLicenseStatus: () => Promise<LicenseStatus>;
+    getMachineId: () => Promise<string>;
+    activateLicense: (code: string) => Promise<LicenseStatus>;
+
     dashboard: () => Promise<DashboardStats>;
-
     listSites: () => Promise<Website[]>;
-    addSite: (site: Partial<Website>) => Promise<unknown>;
-    deleteSite: (id: number) => Promise<unknown>;
+    addSite: (site: Partial<Website>) => Promise<any>;
+    deleteSite: (id: number) => Promise<any>;
 
-    saveProvider: (
-      provider: Partial<AIProvider> & {
-        apiKey?: string;
-        api_key?: string;
-      }
-    ) => Promise<unknown>;
+    saveProvider: (provider: Partial<AIProvider> & {
+      apiKey?: string;
+      api_key?: string;
+    }) => Promise<any>;
 
     listProviders: () => Promise<AIProvider[]>;
-
     listArticles: () => Promise<Article[]>;
+    generate: (input: any) => Promise<any>;
+    publish: (input: any) => Promise<any>;
+    saveEdit: (article: Partial<Article>) => Promise<any>;
 
-    generate: (
-      input: GenerateArticleInput
-    ) => Promise<{
-      results?: unknown[];
-      [key: string]: unknown;
-    }>;
-
-    publish: (
-      input: PublishArticleInput
-    ) => Promise<unknown>;
-
-    saveEdit: (
-      article: Partial<Article>
-    ) => Promise<unknown>;
-
-    addSchedule: (
-      item: Partial<Schedule>
-    ) => Promise<unknown>;
-
+    addSchedule: (item: Partial<Schedule>) => Promise<any>;
     listSchedules: () => Promise<Schedule[]>;
+    deleteSchedule: (id: number) => Promise<any>;
 
-    deleteSchedule: (
-      id: number
-    ) => Promise<unknown>;
-
-    onScheduled: (
-      callback: (id: number) => void
-    ) => () => void;
+    onScheduled: (callback: (id: number) => void) => () => void;
   }
 
   interface Window {
