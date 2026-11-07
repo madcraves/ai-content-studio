@@ -1,23 +1,21 @@
-import { API_KEYS, AI_MODELS } from "../config/api-keys";
-
-interface GenerationInput {
+export interface GenerationInput {
   topic: string;
-  keyword?: string;
-  secondaryKeywords?: string[];
-  tone?: string;
+  keyword: string;
   wordCount?: number;
+  tone?: string;
   instructions?: string;
 }
 
-interface AIProvider {
-  name: string;
+export interface AIProvider {
+  id?: string;
+  name?: string;
+  provider?: string;
   model: string;
   apiKey: string;
+  enabled?: boolean;
 }
 
-interface ArticleResult {
-  provider: string;
-  model: string;
+interface GeneratedArticle {
   title: string;
   content: string;
   excerpt: string;
@@ -25,258 +23,433 @@ interface ArticleResult {
   metaTitle: string;
   metaDescription: string;
   keywords: string[];
+  provider: string;
+  model: string;
 }
 
+const REQUEST_TIMEOUT = 120000;
 const MAX_RETRIES = 1;
 
-function getProviders(): AIProvider[] {
-  return [
-    {
-      name: "Gemini",
-      model: AI_MODELS.gemini,
-      apiKey: API_KEYS.gemini
-    },
-    {
-      name: "Groq",
-      model: AI_MODELS.groq,
-      apiKey: API_KEYS.groq
-    },
-    {
-      name: "OpenRouter",
-      model: AI_MODELS.openrouter,
-      apiKey: API_KEYS.openrouter
-    }
-  ].filter(provider => provider.apiKey?.trim().length > 0);
+// --------------------------------------------------
+// PROVIDER IDENTIFICATION
+// --------------------------------------------------
+
+function getProviderId(provider: AIProvider): string {
+  return String(
+    provider.provider || provider.id || ""
+  ).toLowerCase();
 }
 
-async function callAI(
-  provider: AIProvider,
-  prompt: string
-): Promise<string> {
-  let endpoint = "";
+// --------------------------------------------------
+// ARTICLE PROMPT
+// --------------------------------------------------
 
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json"
+function buildPrompt(input: GenerationInput): string {
+  const wordCount = Math.max(
+    300,
+    Math.min(Number(input.wordCount) || 2000, 10000)
+  );
+
+  return `
+You are an expert SEO content writer, professional researcher
+and experienced website content strategist.
+
+Create a complete, high-quality, original SEO article.
+
+ARTICLE BRIEF:
+
+Topic: ${input.topic}
+
+Primary SEO Keyword: ${input.keyword}
+
+Target Word Count: ${wordCount}
+
+Writing Tone: ${input.tone || "Professional"}
+
+Additional Instructions:
+${input.instructions || "No additional instructions."}
+
+CONTENT REQUIREMENTS:
+
+1. Write a comprehensive article targeting the requested word count.
+2. Use the primary keyword naturally throughout the article.
+3. Include relevant secondary and long-tail keywords.
+4. Create an engaging introduction.
+5. Use a logical H1, H2 and H3 heading structure.
+6. Include useful examples and practical information.
+7. Avoid keyword stuffing and unnecessary repetition.
+8. Write naturally for human readers.
+9. Include a useful conclusion.
+10. Add 5-8 relevant FAQs when appropriate.
+11. Do not invent statistics, studies, sources or factual claims.
+12. Do not include fake citations or fabricated references.
+13. Return valid JSON only.
+14. The content field must contain valid HTML suitable for WordPress.
+15. Do not wrap the JSON in Markdown code fences.
+
+RETURN THIS JSON STRUCTURE:
+
+{
+  "title": "SEO article title",
+  "content": "<h1>Article title</h1><p>Article introduction...</p>",
+  "excerpt": "Short article summary",
+  "slug": "seo-friendly-url-slug",
+  "metaTitle": "SEO meta title",
+  "metaDescription": "SEO meta description",
+  "keywords": [
+    "Primary keyword",
+    "Secondary keyword 1",
+    "Secondary keyword 2",
+    "Secondary keyword 3",
+    "Secondary keyword 4"
+  ]
+}
+
+IMPORTANT:
+Return only a valid JSON object.
+`;
+}
+
+// --------------------------------------------------
+// JSON EXTRACTION
+// --------------------------------------------------
+
+function extractJSON(text: string): any {
+  if (!text || !text.trim()) {
+    throw new Error("AI returned an empty response.");
+  }
+
+  let cleaned = text.trim();
+
+  cleaned = cleaned
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+
+    if (start === -1 || end === -1 || end <= start) {
+      throw new Error(
+        "AI response did not contain valid JSON."
+      );
+    }
+
+    const extracted = cleaned.substring(start, end + 1);
+
+    try {
+      return JSON.parse(extracted);
+    } catch {
+      throw new Error(
+        "Unable to parse the AI-generated article JSON."
+      );
+    }
+  }
+}
+
+// --------------------------------------------------
+// ARTICLE VALIDATION
+// --------------------------------------------------
+
+function parseArticle(
+  raw: any,
+  provider: AIProvider
+): GeneratedArticle {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("Invalid article response.");
+  }
+
+  const title = String(raw.title || "").trim();
+
+  const content = String(
+    raw.content || raw.html || ""
+  ).trim();
+
+  if (!title) {
+    throw new Error("Generated article has no title.");
+  }
+
+  if (!content || content.length < 100) {
+    throw new Error(
+      "Generated article content is missing or too short."
+    );
+  }
+
+  const keywords = Array.isArray(raw.keywords)
+    ? raw.keywords
+        .map((item: any) => String(item).trim())
+        .filter(Boolean)
+    : [];
+
+  return {
+    title,
+    content,
+
+    excerpt: String(
+      raw.excerpt || ""
+    ).trim(),
+
+    slug: String(
+      raw.slug || ""
+    ).trim(),
+
+    metaTitle: String(
+      raw.metaTitle || raw.meta_title || title
+    ).trim(),
+
+    metaDescription: String(
+      raw.metaDescription ||
+      raw.meta_description ||
+      raw.excerpt ||
+      ""
+    ).trim(),
+
+    keywords,
+
+    provider: getProviderId(provider),
+    model: provider.model,
   };
+}
 
-  let body: any;
+// --------------------------------------------------
+// HTTP REQUEST WITH TIMEOUT
+// --------------------------------------------------
 
-  const providerName = provider.name.toLowerCase();
+async function requestWithTimeout(
+  url: string,
+  options: RequestInit
+): Promise<Response> {
+  const controller = new AbortController();
 
-  if (providerName === "gemini") {
-    endpoint =
-      `https://generativelanguage.googleapis.com/v1beta/models/${provider.model}:generateContent?key=${provider.apiKey}`;
+  const timeout = setTimeout(
+    () => controller.abort(),
+    REQUEST_TIMEOUT
+  );
 
-    body = {
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } catch (error: any) {
+    if (error?.name === "AbortError") {
+      throw new Error(
+        "AI request timed out. Please try again."
+      );
+    }
+
+    throw new Error(
+      error?.message || "Unable to connect to AI provider."
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// --------------------------------------------------
+// GEMINI API
+// --------------------------------------------------
+
+async function callGemini(
+  input: GenerationInput,
+  provider: AIProvider
+): Promise<string> {
+  const url =
+    `https://generativelanguage.googleapis.com/v1beta/models/` +
+    `${encodeURIComponent(provider.model)}:generateContent` +
+    `?key=${encodeURIComponent(provider.apiKey)}`;
+
+  const response = await requestWithTimeout(url, {
+    method: "POST",
+
+    headers: {
+      "Content-Type": "application/json",
+    },
+
+    body: JSON.stringify({
       contents: [
         {
-          parts: [{ text: prompt }]
-        }
+          role: "user",
+          parts: [
+            {
+              text: buildPrompt(input),
+            },
+          ],
+        },
       ],
+
       generationConfig: {
         temperature: 0.7,
         maxOutputTokens: 16384,
-        responseMimeType: "application/json"
-      }
-    };
+        responseMimeType: "application/json",
+      },
+    }),
+  });
 
-  } else if (
-    providerName === "groq" ||
-    providerName === "openrouter"
-  ) {
+  const data: any = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      data?.error?.message ||
+      `Gemini API error: HTTP ${response.status}`
+    );
+  }
+
+  const text = data?.candidates?.[0]?.content?.parts
+    ?.map((part: any) => part.text || "")
+    .join("");
+
+  if (!text) {
+    const reason = data?.candidates?.[0]?.finishReason;
+
+    throw new Error(
+      `Gemini returned no article content. Finish reason: ${reason || "Unknown"}`
+    );
+  }
+
+  return text;
+}
+
+// --------------------------------------------------
+// OPENAI-COMPATIBLE PROVIDERS
+// GROQ + OPENROUTER
+// --------------------------------------------------
+
+async function callOpenAICompatible(
+  input: GenerationInput,
+  provider: AIProvider
+): Promise<string> {
+  const providerId = getProviderId(provider);
+
+  let endpoint = "";
+
+  if (providerId === "groq") {
     endpoint =
-      providerName === "groq"
-        ? "https://api.groq.com/openai/v1/chat/completions"
-        : "https://openrouter.ai/api/v1/chat/completions";
+      "https://api.groq.com/openai/v1/chat/completions";
+  } else if (providerId === "openrouter") {
+    endpoint =
+      "https://openrouter.ai/api/v1/chat/completions";
+  } else {
+    throw new Error(
+      `Unsupported OpenAI-compatible provider: ${providerId}`
+    );
+  }
 
-    headers.Authorization = `Bearer ${provider.apiKey}`;
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${provider.apiKey}`,
+    "Content-Type": "application/json",
+  };
 
-    body = {
+  if (providerId === "openrouter") {
+    headers["HTTP-Referer"] = "https://madcraves.com";
+    headers["X-Title"] = "MadCraves AI Content Studio";
+  }
+
+  const response = await requestWithTimeout(endpoint, {
+    method: "POST",
+    headers,
+
+    body: JSON.stringify({
       model: provider.model,
+
       messages: [
         {
           role: "system",
           content:
-            "You are a professional SEO writer. Return only valid JSON. Do not use Markdown code fences."
+            "You are a professional SEO writer. Return only valid JSON.",
         },
         {
           role: "user",
-          content: prompt
-        }
+          content: buildPrompt(input),
+        },
       ],
+
       temperature: 0.7,
       max_tokens: 16384,
+
       response_format: {
-        type: "json_object"
-      }
-    };
-
-  } else {
-    throw new Error(
-      `Unsupported AI provider: ${provider.name}`
-    );
-  }
-
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(180000)
+        type: "json_object",
+      },
+    }),
   });
 
+  const data: any = await response.json().catch(() => ({}));
+
   if (!response.ok) {
-    const errorText = await response.text();
-
     throw new Error(
-      `${provider.name} API error (${response.status}): ${errorText}`
+      data?.error?.message ||
+      `AI provider error: HTTP ${response.status}`
     );
   }
 
-  const data: any = await response.json();
+  const text = data?.choices?.[0]?.message?.content;
 
-  let output = "";
-
-  if (providerName === "gemini") {
-    output =
-      data.candidates?.[0]?.content?.parts
-        ?.map((part: any) => part.text || "")
-        .join("") || "";
-
-    if (!output) {
-      throw new Error(
-        "Gemini returned an empty response or no usable candidate."
-      );
-    }
-
-  } else {
-    output = data.choices?.[0]?.message?.content || "";
-
-    if (!output) {
-      throw new Error(
-        `${provider.name} returned an empty response.`
-      );
-    }
+  if (!text || typeof text !== "string") {
+    throw new Error(
+      "AI provider returned an empty response."
+    );
   }
 
-  return output;
+  return text;
 }
 
-function buildPrompt(input: GenerationInput): string {
-  return `
-You are a senior SEO strategist and professional content writer.
+// --------------------------------------------------
+// CALL AI PROVIDER
+// --------------------------------------------------
 
-Write a high-quality, original, human-readable SEO article.
-
-TOPIC:
-${input.topic}
-
-PRIMARY KEYWORD:
-${input.keyword || input.topic}
-
-SECONDARY KEYWORDS:
-${(input.secondaryKeywords || []).join(", ")}
-
-TARGET WORD COUNT:
-${input.wordCount || 2000}
-
-WRITING TONE:
-${input.tone || "Professional and conversational"}
-
-ADDITIONAL INSTRUCTIONS:
-${input.instructions || "Use natural language and avoid keyword stuffing."}
-
-REQUIREMENTS:
-
-1. Write a compelling SEO title.
-2. Use one clear H1 heading.
-3. Organize the article with relevant H2 and H3 headings.
-4. Naturally include the primary and secondary keywords.
-5. Write an engaging introduction.
-6. Include useful examples and actionable information.
-7. Add a detailed conclusion.
-8. Include 5 relevant FAQs.
-9. Avoid repetitive or robotic language.
-10. Do not use the word "Guide" in the title.
-11. Do not invent statistics or unsupported claims.
-12. Write complete, useful content close to the requested word count.
-13. Return article content as valid HTML.
-14. Do not include Markdown code fences.
-
-Return ONLY valid JSON in this format:
-
-{
-  "title": "Article title",
-  "content": "<h1>Article heading</h1><p>Complete article...</p>",
-  "excerpt": "Short article summary",
-  "slug": "article-url-slug",
-  "metaTitle": "SEO meta title",
-  "metaDescription": "SEO meta description",
-  "keywords": ["primary keyword", "secondary keyword"]
-}
-`;
-}
-
-function parseArticle(
-  raw: string,
+async function callAI(
+  input: GenerationInput,
   provider: AIProvider
-): ArticleResult {
-  const cleaned = raw
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/\s*```$/, "")
-    .trim();
+): Promise<GeneratedArticle> {
+  const providerId = getProviderId(provider);
 
-  const start = cleaned.indexOf("{");
-  const end = cleaned.lastIndexOf("}");
-
-  if (start === -1 || end === -1) {
+  if (!provider.apiKey?.trim()) {
     throw new Error(
-      `${provider.name} returned invalid JSON.`
+      `${providerId} API key is missing.`
     );
   }
 
-  let parsed: any;
-
-  try {
-    parsed = JSON.parse(
-      cleaned.slice(start, end + 1)
-    );
-  } catch {
+  if (!provider.model?.trim()) {
     throw new Error(
-      `${provider.name} returned malformed JSON.`
+      `${providerId} model is missing.`
     );
   }
 
-  if (
-    typeof parsed.title !== "string" ||
-    !parsed.title.trim() ||
-    typeof parsed.content !== "string" ||
-    !parsed.content.trim()
+  let responseText = "";
+
+  if (providerId === "gemini") {
+    responseText = await callGemini(input, provider);
+  } else if (
+    providerId === "groq" ||
+    providerId === "openrouter"
   ) {
+    responseText = await callOpenAICompatible(
+      input,
+      provider
+    );
+  } else {
     throw new Error(
-      `${provider.name} returned incomplete article data.`
+      `Unsupported AI provider: ${providerId}`
     );
   }
 
-  return {
-    provider: provider.name,
-    model: provider.model,
-    title: parsed.title,
-    content: parsed.content,
-    excerpt: parsed.excerpt || "",
-    slug: parsed.slug || "",
-    metaTitle: parsed.metaTitle || parsed.title,
-    metaDescription: parsed.metaDescription || "",
-    keywords: Array.isArray(parsed.keywords)
-      ? parsed.keywords
-      : []
-  };
+  const parsed = extractJSON(responseText);
+
+  return parseArticle(parsed, provider);
 }
+
+// --------------------------------------------------
+// RETRY PROVIDER
+// --------------------------------------------------
 
 async function generateWithRetry(
-  provider: AIProvider,
-  prompt: string
-): Promise<ArticleResult> {
+  input: GenerationInput,
+  provider: AIProvider
+): Promise<GeneratedArticle> {
   let lastError: any;
 
   for (
@@ -285,88 +458,107 @@ async function generateWithRetry(
     attempt++
   ) {
     try {
-      const raw = await callAI(provider, prompt);
-      return parseArticle(raw, provider);
-
+      return await callAI(input, provider);
     } catch (error: any) {
       lastError = error;
 
       if (attempt < MAX_RETRIES) {
         console.warn(
-          `${provider.name} failed. Retrying...`,
-          error.message
+          `${getProviderId(provider)} attempt ${attempt + 1} failed:`,
+          error?.message
         );
       }
     }
   }
 
   throw new Error(
-    `${provider.name} failed after ${MAX_RETRIES + 1} attempts: ${lastError?.message}`
+    `${getProviderId(provider)} failed: ${
+      lastError?.message || "Unknown error"
+    }`
   );
 }
 
+// --------------------------------------------------
+// PARALLEL ARTICLE GENERATION
+// USES THE PROVIDERS SUPPLIED BY MAIN.TS
+// --------------------------------------------------
+
 export async function runParallelGeneration(
   input: GenerationInput,
-  _providers: AIProvider[]
-): Promise<ArticleResult[]> {
+  providers: AIProvider[]
+): Promise<GeneratedArticle[]> {
+  if (!input || !input.topic?.trim()) {
+    throw new Error("Article topic is required.");
+  }
 
-  const providers = getProviders();
+  if (!input.keyword?.trim()) {
+    throw new Error("Primary SEO keyword is required.");
+  }
 
-  if (!providers.length) {
+  const activeProviders = (providers || []).filter(
+    (provider) =>
+      provider.enabled !== false &&
+      typeof provider.apiKey === "string" &&
+      provider.apiKey.trim().length > 0 &&
+      typeof provider.model === "string" &&
+      provider.model.trim().length > 0
+  );
+
+  if (activeProviders.length === 0) {
     throw new Error(
-      "No hardcoded AI API keys configured. Check electron/config/api-keys.ts."
+      "No valid AI providers supplied. Check your built-in API configuration."
     );
   }
 
-  const prompt = buildPrompt(input);
+  console.log(
+    `Starting parallel generation with ${activeProviders.length} AI provider(s).`
+  );
 
-  // Run all configured providers simultaneously.
   const results = await Promise.allSettled(
-    providers.map(provider =>
-      generateWithRetry(provider, prompt)
+    activeProviders.map((provider) =>
+      generateWithRetry(input, provider)
     )
   );
 
-  const successful: ArticleResult[] = [];
-  const failedProviders: AIProvider[] = [];
+  const successfulArticles: GeneratedArticle[] = [];
+
+  const failures: string[] = [];
 
   results.forEach((result, index) => {
+    const provider = activeProviders[index];
+
     if (result.status === "fulfilled") {
-      successful.push(result.value);
+      successfulArticles.push(result.value);
+
+      console.log(
+        `${getProviderId(provider)} generated an article successfully.`
+      );
     } else {
-      failedProviders.push(providers[index]);
+      const errorMessage =
+        result.reason?.message ||
+        String(result.reason);
+
+      failures.push(
+        `${getProviderId(provider)}: ${errorMessage}`
+      );
 
       console.error(
-        `${providers[index].name} failed:`,
-        result.reason?.message
+        `${getProviderId(provider)} generation failed:`,
+        errorMessage
       );
     }
   });
 
-  // Keep every successful article.
-  if (successful.length > 0) {
-    return successful;
+  if (successfulArticles.length === 0) {
+    throw new Error(
+      "All AI providers failed.\n" +
+      failures.join("\n")
+    );
   }
 
-  // All simultaneous attempts failed.
-  // Try each provider again as a backup.
-  const backupErrors: string[] = [];
-
-  for (const provider of failedProviders) {
-    try {
-      const article = await generateWithRetry(
-        provider,
-        prompt
-      );
-
-      return [article];
-
-    } catch (error: any) {
-      backupErrors.push(error.message);
-    }
-  }
-
-  throw new Error(
-    `All AI providers failed. Backup errors: ${backupErrors.join(" | ")}`
+  console.log(
+    `Generation completed. ${successfulArticles.length} article(s) generated.`
   );
+
+  return successfulArticles;
 }
