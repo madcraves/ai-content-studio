@@ -5,6 +5,7 @@ import {
   safeStorage,
   net,
 } from "electron";
+import { autoUpdater } from "electron-updater";
 
 import path from "node:path";
 import fs from "node:fs";
@@ -33,6 +34,26 @@ import {
 let win: BrowserWindow | null = null;
 let db: Database;
 let networkTimer: ReturnType<typeof setInterval> | null = null;
+let updateStatus: { status: string; version?: string; message?: string } = { status: "idle" };
+
+function sendUpdateStatus(status: typeof updateStatus) {
+  updateStatus = status;
+  win?.webContents.send("updates:status", updateStatus);
+}
+
+function configureAutoUpdates() {
+  if (!app.isPackaged) return;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on("checking-for-update", () => sendUpdateStatus({ status: "checking" }));
+  autoUpdater.on("update-available", (info) => sendUpdateStatus({ status: "downloading", version: info.version, message: "A new version is available. Downloading automatically..." }));
+  autoUpdater.on("update-not-available", (info) => sendUpdateStatus({ status: "latest", version: info.version, message: "You are using the latest version." }));
+  autoUpdater.on("download-progress", (progress) => sendUpdateStatus({ status: "downloading", version: autoUpdater.updateInfo?.version, message: `Downloading update: ${Math.round(progress.percent)}%` }));
+  autoUpdater.on("update-downloaded", (info) => sendUpdateStatus({ status: "downloaded", version: info.version, message: `Version ${info.version} is ready to install.` }));
+  autoUpdater.on("error", (error) => sendUpdateStatus({ status: "error", message: error.message || "Update check failed." }));
+  setTimeout(() => void autoUpdater.checkForUpdates().catch((error) => sendUpdateStatus({ status: "error", message: error.message })), 8000);
+  setInterval(() => void autoUpdater.checkForUpdates().catch((error) => sendUpdateStatus({ status: "error", message: error.message })), 6 * 60 * 60 * 1000);
+}
 
 const licenseFile = () =>
   path.join(app.getPath("userData"), "license.json");
@@ -339,6 +360,21 @@ function createWindow(): void {
 }
 
 // --------------------------------------------------
+// AUTOMATIC SOFTWARE UPDATES
+// --------------------------------------------------
+ipcMain.handle("updates:status", () => updateStatus);
+ipcMain.handle("updates:check", async () => {
+  if (!app.isPackaged) return { status: "development", message: "Updates are available in the installed version." };
+  await autoUpdater.checkForUpdates();
+  return updateStatus;
+});
+ipcMain.handle("updates:install", () => {
+  if (updateStatus.status !== "downloaded") throw new Error("The update is not ready yet.");
+  autoUpdater.quitAndInstall(false, true);
+  return { ok: true };
+});
+
+// --------------------------------------------------
 // NETWORK STATUS
 // --------------------------------------------------
 
@@ -385,6 +421,7 @@ app.whenReady().then(() => {
   );
 
   startNetworkMonitoring();
+  configureAutoUpdates();
 
   startScheduler(db, async (scheduleId: number) => {
     requireValidLicense();
