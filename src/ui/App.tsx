@@ -85,7 +85,7 @@ function App() {
   const [imageProviders, setImageProviders] = useState<any[]>([]);
   const [articles, setArticles] = useState<any[]>([]);
   const [deletingArticleId, setDeletingArticleId] = useState<number | null>(null);
-  const [selectedArticleProvider, setSelectedArticleProvider] = useState("gemini");
+  const [selectedArticleProvider, setSelectedArticleProvider] = useState("all");
   const [imageApiKeyInputs, setImageApiKeyInputs] = useState<Record<string, string>>({});
   const [imageProviderSaving, setImageProviderSaving] = useState<string | null>(null);
   const [selectedImageProvider, setSelectedImageProvider] = useState("image-openai");
