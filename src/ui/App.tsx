@@ -97,6 +97,9 @@ function App() {
   const [tone, setTone] = useState("Professional");
   const [instructions, setInstructions] = useState("");
   const [articleLoading, setArticleLoading] = useState(false);
+  const [generatedOptions, setGeneratedOptions] = useState<any[]>([]);
+  const [generatedArticle, setGeneratedArticle] = useState<any>(null);
+  const [selectedSiteId, setSelectedSiteId] = useState<string>("");
 
   const [editingArticle, setEditingArticle] = useState<any>(null);
 
@@ -396,10 +399,14 @@ function App() {
         throw new Error(result?.message || "Article generation failed.");
       }
 
-      await loadData(true);
-      setPage("Article Library");
-
-      notify("Article generation completed successfully.");
+      const savedArticles = await studio.listArticles();
+      const generated = Array.isArray(savedArticles) ? savedArticles.filter((item: any) => Number(item.job_id) === Number(result?.jobId)) : [];
+      setArticles(Array.isArray(savedArticles) ? savedArticles : []);
+      setGeneratedOptions(generated);
+      setGeneratedArticle(generated[0] || null);
+      if (sites.length && !selectedSiteId) setSelectedSiteId(String(sites[0].id));
+      setPage("AI Article Generator");
+      notify("Article generation completed successfully. Review your article below.");
     } catch (err: any) {
       notify(err?.message || "Article generation failed.", true);
     } finally {
