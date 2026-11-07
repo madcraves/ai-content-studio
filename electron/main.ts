@@ -286,10 +286,13 @@ async function testAIProvider(providerId: string) {
     const data: any = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      throw new Error(
+      const apiMessage =
         data?.error?.message ||
         data?.message ||
-        `HTTP ${response.status}`
+        data?.error ||
+        "The provider rejected the connection request.";
+      throw new Error(
+        `${provider.name} returned HTTP ${response.status} for model "${provider.model}": ${String(apiMessage)}`
       );
     }
 
@@ -565,7 +568,9 @@ ipcMain.handle("providers:save", (_event, provider) => {
 
   const builtinIds = ["gemini", "groq", "openrouter"];
   const existingBuiltin = builtinIds.includes(provider.provider)
-    ? db.getEnabledProviders().find((row: any) => row.provider === provider.provider)
+    ? db.getEnabledProviders()
+        .filter((row: any) => row.provider === provider.provider)
+        .sort((a: any, b: any) => Number(b.id) - Number(a.id))[0]
     : null;
 
   db.saveProvider({
