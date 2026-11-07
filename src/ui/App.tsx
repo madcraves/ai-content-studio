@@ -195,7 +195,7 @@ function App() {
       setSites(Array.isArray(siteData) ? siteData : []);
       setProviders(Array.isArray(providerData) ? providerData : []);
       setImageProviders(Array.isArray(imageProviderData) ? imageProviderData : []);
-      if (Array.isArray(providerData) && providerData.length && !providerData.some((item: any) => item.id === selectedArticleProvider)) {
+      if (selectedArticleProvider !== "all" && Array.isArray(providerData) && providerData.length && !providerData.some((item: any) => item.id === selectedArticleProvider)) {
         setSelectedArticleProvider(providerData.find((item: any) => item.configured)?.id || providerData[0].id);
       }
       setArticles(Array.isArray(articleData) ? articleData : []);
