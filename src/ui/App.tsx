@@ -414,6 +414,40 @@ function App() {
     }
   }
 
+  async function publishGeneratedArticle() {
+    if (!generatedArticle?.id) {
+      notify("Generate an article first before sending it to WordPress.", true);
+      return;
+    }
+    if (!selectedSiteId) {
+      notify("Please select a WordPress publishing destination.", true);
+      return;
+    }
+    clearNotifications();
+    setPublishingArticle(true);
+    try {
+      const result = await studio.publish({
+        articleId: generatedArticle.id,
+        siteId: Number(selectedSiteId),
+      });
+      if (result?.ok === false || result?.success === false) {
+        throw new Error(result?.message || "WordPress publishing failed.");
+      }
+      await loadData(true);
+      const refreshed = await studio.listArticles();
+      if (Array.isArray(refreshed)) {
+        setArticles(refreshed);
+        const updated = refreshed.find((item: any) => Number(item.id) === Number(generatedArticle.id));
+        if (updated) setGeneratedArticle(updated);
+      }
+      notify(result?.message || "Article successfully sent to WordPress drafts.");
+    } catch (err: any) {
+      notify(err?.message || "Unable to send article to WordPress.", true);
+    } finally {
+      setPublishingArticle(false);
+    }
+  }
+
   async function saveArticleEdit() {
     if (!editingArticle) return;
 
@@ -828,95 +862,126 @@ function App() {
 
           {/* AI ARTICLE GENERATOR */}
           {page === "AI Article Generator" && (
-            <section className="panel generator-panel">
-              <div className="panel-heading">
+            <section className="generator-workspace">
+              <div className="generator-heading">
                 <div>
-                  <h3>Article Brief</h3>
-                  <p>Define your topic and SEO requirements.</p>
+                  <span className="eyebrow-light">CONTENT CREATION WORKSPACE</span>
+                  <h1>AI Article Studio</h1>
+                  <p>Build your SEO brief, review the generated content and choose where to publish.</p>
                 </div>
-                <span className="status-badge">AI Powered</span>
+                <div className="generator-stepper">
+                  <span className="step-active"><b>01</b> Article brief</span>
+                  <span className={generatedArticle ? "step-active" : ""}><b>02</b> Review article</span>
+                  <span><b>03</b> Publishing</span>
+                </div>
               </div>
 
-              <form onSubmit={generateArticle}>
-                <div className="form-grid">
-                  <div className="form-group full-width">
-                    <label>Article Topic *</label>
-                    <input
-                      value={topic}
-                      onChange={(event) => setTopic(event.target.value)}
-                      placeholder="e.g. Complete Guide to Umrah Packages"
-                      required
-                    />
+              <div className="generator-columns">
+                <section className="brief-card">
+                  <div className="generator-card-title">
+                    <div className="section-number">01</div>
+                    <div><h3>Article Brief</h3><p>Tell the AI what to write.</p></div>
                   </div>
+                  <form onSubmit={generateArticle} className="brief-form">
+                    <div className="form-group">
+                      <label>Article Topic <span>*</span></label>
+                      <input value={topic} onChange={(event) => setTopic(event.target.value)} placeholder="e.g. Complete Guide to Umrah Packages" required />
+                    </div>
+                    <div className="form-group">
+                      <label>Primary SEO Keyword <span>*</span></label>
+                      <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="Enter your main keyword" required />
+                    </div>
+                    <div className="brief-two-col">
+                      <div className="form-group">
+                        <label>Target Word Count</label>
+                        <select value={wordCount} onChange={(event) => setWordCount(event.target.value)}>
+                          <option value="500">500 words</option><option value="1000">1,000 words</option><option value="1500">1,500 words</option><option value="2000">2,000 words</option><option value="2500">2,500 words</option><option value="3000">3,000 words</option><option value="4000">4,000 words</option><option value="5000">5,000 words</option>
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>Writing Tone</label>
+                        <select value={tone} onChange={(event) => setTone(event.target.value)}>
+                          <option>Professional</option><option>Informative</option><option>Conversational</option><option>Friendly</option><option>Persuasive</option><option>Technical</option><option>Academic</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="form-group brief-instructions">
+                      <label>Additional Instructions</label>
+                      <textarea rows={5} value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="Audience, brand details, style preferences, SEO instructions and other requirements..." />
+                    </div>
+                    <div className="brief-submit">
+                      <span>AI output is saved to your Article Library automatically.</span>
+                      <button type="submit" className="primary-button" disabled={articleLoading}>
+                        {articleLoading ? <><span className="button-spinner" /> Generating...</> : "✦ Generate Article"}
+                      </button>
+                    </div>
+                  </form>
+                </section>
 
-                  <div className="form-group full-width">
-                    <label>Primary SEO Keyword *</label>
-                    <input
-                      value={keyword}
-                      onChange={(event) => setKeyword(event.target.value)}
-                      placeholder="Enter your primary keyword"
-                      required
-                    />
-                  </div>
+                <div className="generated-column">
+                  <section className="generated-card">
+                    <div className="generator-card-title generated-title-row">
+                      <div className="section-number">02</div>
+                      <div><h3>Generated Article</h3><p>Preview and select an AI result.</p></div>
+                      {generatedArticle && <span className="status-badge">Ready to review</span>}
+                    </div>
+                    {generatedOptions.length > 1 && (
+                      <div className="form-group result-selector">
+                        <label>AI generated versions</label>
+                        <select value={String(generatedArticle?.id || "")} onChange={(event) => setGeneratedArticle(generatedOptions.find((item: any) => String(item.id) === event.target.value) || null)}>
+                          {generatedOptions.map((item: any) => <option key={item.id} value={String(item.id)}>{item.provider || "AI"} · {item.title}</option>)}
+                        </select>
+                      </div>
+                    )}
+                    {generatedArticle ? (
+                      <>
+                        <div className="article-preview-meta"><span>{generatedArticle.provider || "AI generated"}</span><span>{generatedArticle.model || "Generated content"}</span><span>{generatedArticle.status || "Generated"}</span></div>
+                        <h2 className="generated-article-title">{generatedArticle.title}</h2>
+                        <p className="generated-excerpt">{generatedArticle.excerpt || "No excerpt returned by the provider."}</p>
+                        <iframe className="article-preview-frame" title="Generated article preview" sandbox="" srcDoc={String(generatedArticle.content || "")} />
+                        <div className="generated-actions">
+                          <button type="button" className="secondary-button" onClick={() => setEditingArticle({ ...generatedArticle })}>Edit Article</button>
+                          <button type="button" className="text-button" onClick={() => setPage("Article Library")}>Open Article Library →</button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="generated-empty">
+                        <div className="empty-preview-icon">✦</div>
+                        <h3>Your article preview will appear here</h3>
+                        <p>Complete the brief and select Generate Article. Your saved article will appear in this panel for review.</p>
+                      </div>
+                    )}
+                  </section>
 
-                  <div className="form-group">
-                    <label>Target Word Count</label>
-                    <select
-                      value={wordCount}
-                      onChange={(event) => setWordCount(event.target.value)}
-                    >
-                      <option value="500">500 words</option>
-                      <option value="1000">1,000 words</option>
-                      <option value="1500">1,500 words</option>
-                      <option value="2000">2,000 words</option>
-                      <option value="2500">2,500 words</option>
-                      <option value="3000">3,000 words</option>
-                      <option value="4000">4,000 words</option>
-                      <option value="5000">5,000 words</option>
-                    </select>
-                  </div>
-
-                  <div className="form-group">
-                    <label>Writing Tone</label>
-                    <select
-                      value={tone}
-                      onChange={(event) => setTone(event.target.value)}
-                    >
-                      <option>Professional</option>
-                      <option>Informative</option>
-                      <option>Conversational</option>
-                      <option>Friendly</option>
-                      <option>Persuasive</option>
-                      <option>Technical</option>
-                      <option>Academic</option>
-                    </select>
-                  </div>
-
-                  <div className="form-group full-width">
-                    <label>Additional Instructions</label>
-                    <textarea
-                      rows={6}
-                      value={instructions}
-                      onChange={(event) => setInstructions(event.target.value)}
-                      placeholder="Add instructions, target audience, business details, SEO requirements or anything else the AI should consider..."
-                    />
-                  </div>
+                  <section className="blog-image-card">
+                    <div className="generator-card-title">
+                      <div className="section-number image-number">03</div>
+                      <div><h3>Blog Image</h3><p>Featured image for your article.</p></div>
+                      <span className="coming-soon-label">Not connected</span>
+                    </div>
+                    <div className="image-placeholder">
+                      <div className="image-placeholder-art"><span>✧</span><i /><b /></div>
+                      <div><strong>Featured image workspace</strong><small>Image generation is not connected in this build yet.</small></div>
+                    </div>
+                  </section>
                 </div>
+              </div>
 
-                <div className="generator-footer">
-                  <span className="muted">
-                    Your article will be generated and saved in Article Library.
-                  </span>
-
-                  <button
-                    type="submit"
-                    className="primary-button"
-                    disabled={articleLoading}
-                  >
-                    {articleLoading ? "Generating Article..." : "✦ Generate Article"}
+              <section className="publishing-card">
+                <div className="publishing-copy">
+                  <div className="section-number publish-number">04</div>
+                  <div><h3>Publishing Destination</h3><p>Choose a connected WordPress website. Your article will be saved as a draft.</p></div>
+                </div>
+                <div className="publishing-controls">
+                  <select aria-label="Publishing destination" value={selectedSiteId} onChange={(event) => setSelectedSiteId(event.target.value)} disabled={!sites.length}>
+                    <option value="">{sites.length ? "Select a website" : "No website connected — add one in Websites"}</option>
+                    {sites.map((site: any) => <option key={site.id} value={String(site.id)}>{site.name} · {site.url}</option>)}
+                  </select>
+                  <button type="button" className="primary-button" disabled={!generatedArticle?.id || !selectedSiteId || publishingArticle} onClick={() => void publishGeneratedArticle()}>
+                    {publishingArticle ? "Sending draft..." : "Send to WordPress Draft"}
                   </button>
                 </div>
-              </form>
+              </section>
             </section>
           )}
 
