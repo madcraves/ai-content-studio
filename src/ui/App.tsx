@@ -140,6 +140,8 @@ function App() {
 
   const [scheduleTopic, setScheduleTopic] = useState("");
   const [scheduleKeyword, setScheduleKeyword] = useState("");
+  const [scheduleArticleId, setScheduleArticleId] = useState("");
+  const [scheduleSiteId, setScheduleSiteId] = useState("");
   const [scheduleDate, setScheduleDate] = useState("");
   const [scheduleTime, setScheduleTime] = useState("");
   const [scheduleLoading, setScheduleLoading] = useState(false);
@@ -732,38 +734,38 @@ function App() {
     event?.preventDefault();
     clearNotifications();
 
-    if (!scheduleTopic.trim() || !scheduleKeyword.trim()) {
-      notify("Enter a topic and primary keyword.", true);
-      return;
-    }
+    const selectedArticle = articles.find((item: any) => String(item.id) === scheduleArticleId);
+    const selectedSite = sites.find((item: any) => String(item.id) === scheduleSiteId);
+    if (!selectedArticle) { notify("Please select an article from your Article Library.", true); return; }
+    if (!selectedSite) { notify("Please select a connected WordPress website.", true); return; }
+    if (!scheduleDate || !scheduleTime) { notify("Select a schedule date and time.", true); return; }
 
-    if (!scheduleDate || !scheduleTime) {
-      notify("Select a schedule date and time.", true);
-      return;
+    const localRunAt = `${scheduleDate} ${scheduleTime}:00`;
+    const selectedDate = new Date(`${scheduleDate}T${scheduleTime}:00`);
+    if (Number.isNaN(selectedDate.getTime()) || selectedDate.getTime() <= Date.now()) {
+      notify("Please select a future date and time.", true); return;
     }
 
     setScheduleLoading(true);
-
     try {
-      const scheduledAt = new Date(
-        `${scheduleDate}T${scheduleTime}`
-      ).toISOString();
-
       await studio.addSchedule({
-        topic: scheduleTopic.trim(),
-        keyword: scheduleKeyword.trim(),
-        scheduledAt,
-        scheduled_at: scheduledAt,
-        wordCount: 2000,
+        articleId: Number(selectedArticle.id),
+        article_id: Number(selectedArticle.id),
+        siteId: Number(selectedSite.id),
+        site_id: Number(selectedSite.id),
+        title: selectedArticle.title || "Scheduled article",
+        topic: selectedArticle.title || "Scheduled article",
+        run_at: localRunAt,
+        runAt: localRunAt,
+        scheduledAt: localRunAt,
+        scheduled_at: localRunAt,
       });
-
-      setScheduleTopic("");
-      setScheduleKeyword("");
+      setScheduleArticleId("");
+      setScheduleSiteId("");
       setScheduleDate("");
       setScheduleTime("");
-
       await loadData(true);
-      notify("Content schedule created.");
+      notify("Article publishing schedule created successfully.");
     } catch (err: any) {
       notify(err?.message || "Unable to create schedule.", true);
     } finally {
@@ -1432,39 +1434,33 @@ function App() {
               <section className="panel">
                 <div className="panel-heading">
                   <div>
-                    <h3>Create Content Schedule</h3>
-                    <p>Set a date and time for automatic article generation.</p>
+                    <h3>Schedule Article Publishing</h3>
+                    <p>Choose an existing article, its WordPress destination, and when it should be sent as a WordPress draft.</p>
                   </div>
                 </div>
 
                 <form onSubmit={addSchedule}>
                   <div className="form-grid">
                     <div className="form-group full-width">
-                      <label>Article Topic *</label>
-                      <input
-                        value={scheduleTopic}
-                        onChange={(event) =>
-                          setScheduleTopic(event.target.value)
-                        }
-                        placeholder="Enter article topic"
-                        required
-                      />
+                      <label>Select Generated Article *</label>
+                      <select value={scheduleArticleId} onChange={(event) => setScheduleArticleId(event.target.value)} required>
+                        <option value="">Choose an article from Article Library</option>
+                        {articles.map((article: any) => <option key={article.id} value={String(article.id)}>{article.title || "Untitled article"}</option>)}
+                      </select>
+                      {articles.length === 0 && <small className="muted">No generated articles found. Generate an article first.</small>}
                     </div>
 
                     <div className="form-group full-width">
-                      <label>Primary Keyword *</label>
-                      <input
-                        value={scheduleKeyword}
-                        onChange={(event) =>
-                          setScheduleKeyword(event.target.value)
-                        }
-                        placeholder="Enter primary keyword"
-                        required
-                      />
+                      <label>Publishing Website *</label>
+                      <select value={scheduleSiteId} onChange={(event) => setScheduleSiteId(event.target.value)} required>
+                        <option value="">Choose a connected WordPress website</option>
+                        {sites.map((site: any) => <option key={site.id} value={String(site.id)}>{site.name} — {site.url}</option>)}
+                      </select>
+                      {sites.length === 0 && <small className="muted">No website connected. Add one in Websites first.</small>}
                     </div>
 
                     <div className="form-group">
-                      <label>Schedule Date</label>
+                      <label>Schedule Date *</label>
                       <input
                         type="date"
                         min={new Date().toISOString().slice(0, 10)}
@@ -1516,7 +1512,7 @@ function App() {
                     {schedules.map((item: any) => (
                       <div className="list-row" key={item.id}>
                         <div>
-                          <strong>{item.topic || "Scheduled article"}</strong>
+                          <strong>{item.title || item.topic || "Scheduled article"}</strong>
                           <small>
                             {item.keyword || "No keyword"} ·{" "}
                             {formatDate(
