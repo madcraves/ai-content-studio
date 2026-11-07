@@ -627,9 +627,11 @@ ipcMain.handle(
     const jobId = db.createJob(input);
 
     try {
-      const results = input?.multiAgent
+      const results = input?.providerId === "all"
         ? await runMultiAgentGeneration(input, providers)
-        : await runParallelGeneration(input, providers);
+        : input?.multiAgent
+          ? await runMultiAgentGeneration(input, providers)
+          : await runParallelGeneration(input, providers);
 
       if (!results || results.length === 0) {
         throw new Error(
