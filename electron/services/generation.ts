@@ -119,38 +119,72 @@ Return only a valid JSON object.
 // --------------------------------------------------
 
 function extractJSON(text: string): any {
-  if (!text || !text.trim()) {
-    throw new Error("AI returned an empty response.");
-  }
+  if (!text || !text.trim()) throw new Error("AI returned an empty response.");
 
-  let cleaned = text.trim();
-
-  cleaned = cleaned
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/\s*```$/i, "")
+  const cleaned = text.trim()
+    .replace(/^\uFEFF/, "")
+    .replace(/^\x60\x60\x60(?:json)?\s*/i, "")
+    .replace(/\s*\x60\x60\x60$/i, "")
     .trim();
 
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    const start = cleaned.indexOf("{");
-    const end = cleaned.lastIndexOf("}");
+  // Find the first complete top-level JSON object. This avoids being
+  // confused by braces inside HTML, examples or explanatory text.
+  const start = cleaned.indexOf("{");
+  if (start < 0) throw new Error("AI response did not contain a JSON object.");
 
-    if (start === -1 || end === -1 || end <= start) {
-      throw new Error(
-        "AI response did not contain valid JSON."
-      );
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let end = -1;
+  for (let i = start; i < cleaned.length; i++) {
+    const ch = cleaned[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
     }
+    if (ch === '"') inString = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) { end = i; break; }
+    }
+  }
 
-    const extracted = cleaned.substring(start, end + 1);
+  if (end < 0) {
+    throw new Error("AI response was incomplete or cut off before the JSON object finished. Try a shorter article or another model.");
+  }
 
+  const candidate = cleaned.slice(start, end + 1);
+  try {
+    return JSON.parse(candidate);
+  } catch (firstError: any) {
+    // Repair common formatting defects without changing article wording:
+    // raw control characters inside strings and trailing commas.
+    let repaired = "";
+    inString = false;
+    escaped = false;
+    for (let i = 0; i < candidate.length; i++) {
+      const ch = candidate[i];
+      if (inString) {
+        if (escaped) { repaired += ch; escaped = false; }
+        else if (ch === "\\\\") { repaired += ch; escaped = true; }
+        else if (ch === '"') { repaired += ch; inString = false; }
+        else if (ch === "\n") repaired += "\\\\n";
+        else if (ch === "\r") repaired += "\\\\r";
+        else if (ch === "\t") repaired += "\\\\t";
+        else repaired += ch;
+      } else {
+        repaired += ch;
+        if (ch === '"') inString = true;
+      }
+    }
+    repaired = repaired.replace(/,\s*([}\]])/g, "$1");
     try {
-      return JSON.parse(extracted);
+      return JSON.parse(repaired);
     } catch {
-      throw new Error(
-        "Unable to parse the AI-generated article JSON."
-      );
+      throw new Error("Gemini returned malformed JSON (not valid structured article data). Please retry; if it repeats, select a different Gemini model.");
     }
   }
 }
@@ -303,16 +337,21 @@ async function callGemini(
     );
   }
 
-  const text = data?.candidates?.[0]?.content?.parts
+  const candidate = data?.candidates?.[0];
+  const text = candidate?.content?.parts
     ?.map((part: any) => part.text || "")
     .join("");
+  const finishReason = candidate?.finishReason || "Unknown";
 
   if (!text) {
-    const reason = data?.candidates?.[0]?.finishReason;
-
-    throw new Error(
-      `Gemini returned no article content. Finish reason: ${reason || "Unknown"}`
-    );
+    const blockReason = data?.promptFeedback?.blockReason;
+    throw new Error(`Gemini returned no article content. Finish reason: ${finishReason}; block reason: ${blockReason || "none"}.`);
+  }
+  if (finishReason === "MAX_TOKENS") {
+    throw new Error("Gemini stopped because its output token limit was reached. Reduce the target word count or choose a model with a larger output limit.");
+  }
+  if (finishReason === "SAFETY") {
+    throw new Error("Gemini blocked this response for safety reasons. Please adjust the topic or instructions and try again.");
   }
 
   return text;
