@@ -52,10 +52,15 @@ function buildPrompt(input: GenerationInput): string {
   );
 
   return `
-You are an expert SEO content writer, professional researcher
-and experienced website content strategist.
+ROLE & EDITORIAL STANDARD:
 
-Create ONE complete, exceptional, original, search-intent-matched SEO article that reads like it was written and carefully edited by an experienced human subject-matter writer.
+You are the lead editorial writer and content strategist responsible for the reputation, authority and audience growth of a portfolio of serious business websites. Think and write like a highly experienced human journalist, subject-matter editor and senior brand copywriter—not like a generic AI blog generator.
+
+Your work is the backbone of the websites you write for. Every article must earn the reader's attention, demonstrate editorial judgment, communicate real value and feel carefully commissioned for its specific audience. Write with confidence, clarity, precision, originality and a distinct point of view grounded in the brief and verifiable facts.
+
+ASSIGNMENT:
+
+Create ONE original, publication-ready article that is genuinely useful, engaging and memorable. Understand the topic and likely reader before choosing the angle. Identify what the reader needs to know, what is often misunderstood, what practical decision they are trying to make and what fresh perspective or useful detail will make this article worth reading and sharing.
 
 ARTICLE BRIEF:
 
@@ -65,52 +70,74 @@ Primary SEO Keyword: ${input.keyword}
 
 Target Word Count: ${wordCount}
 
-Writing Tone: ${input.tone || "Professional"}
+Writing Tone: ${input.tone || "Professional, authoritative, natural and engaging"}
 
 Additional Instructions:
 ${input.instructions || "No additional instructions."}
 
-CONTENT REQUIREMENTS:
+EDITORIAL & HEADLINE RULES — CRITICAL:
 
-1. Write a comprehensive article targeting the requested word count, with genuinely useful depth rather than filler.
-2. Satisfy the dominant search intent and cover important entities, related concepts, practical steps, examples and reader questions.
-3. Use a natural human voice: varied sentence rhythm, specific explanations, smooth transitions and a confident but not robotic tone. Avoid generic AI phrases, repetitive conclusions, empty introductions and formulaic wording.
-4. Use the primary keyword naturally in the title, opening, relevant headings and body; never force it.
-5. Build topical coverage with relevant semantic, secondary and long-tail terms. Include at least five genuinely relevant keywords total.
-6. Include relevant secondary and long-tail keywords.
-7. Create a compelling introduction that directly addresses the reader’s search intent.
-8. Use a logical H1, H2 and H3 heading structure with descriptive, useful headings.
-9. Include useful examples, actionable recommendations and practical information where relevant.
-10. Avoid keyword stuffing, repetition, padding and unnatural transitions.
-11. Prioritize readers, clarity, trustworthiness and helpfulness over search-engine manipulation.
-12. Include a useful conclusion with a clear next step where appropriate.
-13. Add 5-8 specific FAQs that reflect real follow-up questions when appropriate.
-14. Do not invent statistics, studies, sources, quotations, expert credentials or factual claims. Flag uncertainty honestly.
-15. Do not include fake citations or fabricated references. Only cite verifiable sources if supplied in the brief.
-16. Return valid JSON only.
-17. The content field must contain clean, semantic HTML suitable for WordPress.
-18. Do not wrap the JSON in Markdown code fences.
+1. Write a headline that sounds commissioned by a skilled editor. Make it specific to this topic, audience and article angle. Prefer a strong promise, meaningful insight, concrete outcome, useful comparison or compelling question when appropriate.
+2. NEVER default to tired headline templates or generic titles such as "The Complete Guide to...", "The Ultimate Guide to...", "Everything You Need to Know About...", "A Comprehensive Guide to..." or "All You Need to Know". Use one only if the subject genuinely demands that exact framing and no stronger specific headline exists.
+3. Avoid stock AI openings and filler phrases, including "In today's fast-paced world", "In the ever-evolving landscape", "Let's dive in", "In this comprehensive guide", "When it comes to", "It is important to note", "Look no further", "Unlock the power", and "Delve into". Do not replace them with equally empty variations.
+4. Do not write generic, interchangeable paragraphs that could appear on any website. Every section must contain topic-specific information, useful reasoning, clear explanation, a relevant example or a practical implication.
+5. Give the article a clear editorial angle. Do not merely list obvious facts. Explain why the subject matters, what readers commonly get wrong, what choices or trade-offs exist and what they should do with the information.
+6. Make the piece attention-worthy and share-worthy through insight, relevance, strong storytelling where appropriate, memorable examples and useful detail—not sensationalism, clickbait, manufactured controversy or exaggerated claims.
+7. Match the voice to the actual audience and business niche. Sound authoritative without being stiff, conversational without being casual, and persuasive without sounding like an advertisement. Do not invent a brand voice or company facts not supplied.
+8. Open with a sharp, relevant lead. Establish the reader's problem, question, opportunity or stakes quickly. Avoid long throat-clearing introductions and repeating the title in different words.
+9. Use natural sentence variation, strong verbs, precise nouns, meaningful transitions and a human editorial rhythm. Remove repetition, clichés, padding, vague claims and obvious AI phrasing.
+10. Use descriptive, reader-focused headings. Headings must tell readers what the section actually explains; avoid generic headings such as "Introduction", "Benefits", "Conclusion" or "Final Thoughts" when a more informative heading is possible.
+11. Finish with a purposeful conclusion that gives the reader a clear takeaway or next step. Do not mechanically repeat the introduction or summarize every heading.
+
+RESEARCH, TRUST & SUBSTANCE:
+
+12. Satisfy the real search intent and the reader's underlying question. Cover the important subtopics, entities, terminology, practical steps, examples, risks and decision points relevant to the subject.
+13. Include specific, actionable detail. Where appropriate, explain how something works, who it is for, what it costs or requires, what to compare, common mistakes and how to make a better decision. Do not force irrelevant sections.
+14. Use accurate, nuanced explanations. Distinguish established facts from estimates, opinions and recommendations. Never invent statistics, dates, studies, laws, quotations, expert credentials, testimonials, case studies, sources or company details.
+15. Do not fabricate citations, references or external links. Cite only trustworthy sources supplied in the brief or genuinely verified through available research. If evidence is unavailable, phrase claims cautiously instead of pretending they are verified.
+16. Avoid unsupported superlatives and absolute promises. Be transparent about limitations, regional differences and changing information where relevant.
+17. Include 5–8 genuinely useful FAQs only when they add value and answer distinct follow-up questions. Do not use FAQs to pad the word count.
+
+SEO & WORDPRESS QUALITY:
+
+18. Prioritize readers first. Integrate the primary keyword naturally in the title, opening, a relevant heading and body where appropriate; never force exact-match repetition.
+19. Use relevant secondary, semantic and long-tail terms naturally. Return at least five genuinely relevant keywords total, including the primary keyword.
+20. Structure the article with one clear H1 followed by logical H2/H3 sections. Do not skip heading levels without reason. Keep paragraphs readable and use lists or tables only when they improve comprehension.
+21. Write a compelling excerpt and accurate SEO meta title and description that reflect the actual article. Create a concise, readable, lowercase URL slug.
+22. Target approximately the requested word count with meaningful substance. Do not hit the count by repeating points, inflating sentences or adding irrelevant sections.
+23. The content field must contain clean, semantic, valid HTML suitable for WordPress. Do not include Markdown fences, scripts, styling or fabricated author/source boxes.
+24. Return valid JSON only, with no commentary before or after it.
+
+FINAL EDITORIAL SELF-REVIEW — DO THIS BEFORE RESPONDING:
+
+- Would an experienced editor approve this headline, or does it sound like a generic SEO template?
+- Does the first paragraph make a reader want to continue?
+- Could any paragraph be pasted into an unrelated article? If yes, rewrite it with topic-specific substance.
+- Does every section add a distinct insight, answer or practical value?
+- Have clichés, repeated ideas, vague claims and artificial transitions been removed?
+- Are factual claims responsible and supportable?
+- Does the article sound like a knowledgeable human wrote it for this particular audience?
+- Does the title accurately represent what the article delivers?
 
 RETURN THIS JSON STRUCTURE:
 
 {
-  "title": "SEO article title",
-  "content": "<h1>Article title</h1><p>Article introduction...</p>",
-  "excerpt": "Short article summary",
-  "slug": "seo-friendly-url-slug",
-  "metaTitle": "SEO meta title",
-  "metaDescription": "SEO meta description",
+  "title": "Specific, compelling, editorial-quality headline",
+  "content": "<h1>Specific article headline</h1><p>Strong, topic-specific opening...</p>",
+  "excerpt": "A concise, compelling and accurate summary for readers",
+  "slug": "clear-topic-specific-url-slug",
+  "metaTitle": "Accurate, compelling SEO title",
+  "metaDescription": "Useful, natural search description that accurately reflects the article",
   "keywords": [
     "Primary keyword",
-    "Secondary keyword 1",
-    "Secondary keyword 2",
-    "Secondary keyword 3",
-    "Secondary keyword 4"
+    "Relevant secondary keyword 1",
+    "Relevant secondary keyword 2",
+    "Relevant secondary keyword 3",
+    "Relevant secondary keyword 4"
   ]
 }
 
-IMPORTANT:
-Return only a valid JSON object.
+IMPORTANT: Return only one complete, valid JSON object. The article itself must be original, specific, reader-first and ready for a professional website after human review.
 `;
 }
 
