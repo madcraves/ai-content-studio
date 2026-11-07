@@ -793,11 +793,11 @@ function App() {
           <div className="topbar-actions">
             {updateInfo.status === "downloaded" ? (
               <button type="button" className="primary-button" onClick={() => void studio.installUpdate()}>
-                Restart to Update {updateInfo.version ? `(${updateInfo.version})` : ""}
+                Restart to Install
               </button>
             ) : (
               <button type="button" className="secondary-button" disabled={updateInfo.status === "checking" || updateInfo.status === "downloading"} title={updateInfo.message || "Automatically checks for updates"} onClick={() => void studio.checkForUpdates().then(setUpdateInfo).catch((e: any) => notify(e.message, true))}>
-                {updateInfo.status === "downloading" ? (updateInfo.message || "Downloading update...") : updateInfo.status === "checking" ? "Checking updates..." : "Check updates"}
+                {updateInfo.status === "downloading" ? "Downloading update…" : updateInfo.status === "checking" ? "Checking updates..." : "Check for Updates"}
               </button>
             )}
             <span className={`connection-label ${online ? "online" : "offline"}`}>
@@ -815,8 +815,43 @@ function App() {
           </div>
         </header>
 
-        {updateInfo.message && updateInfo.status !== "idle" && updateInfo.status !== "latest" && (
-          <div className="alert success-alert"><span>{updateInfo.message}</span></div>
+        {updateInfo.status === "downloading" && (
+          <section className="update-progress-panel" aria-live="polite">
+            <div className="update-progress-heading">
+              <div>
+                <strong>Software update downloading</strong>
+                <span>{updateInfo.message || "Downloading the latest version in the background…"}</span>
+              </div>
+              <b>{Math.round(Math.max(0, Math.min(100, Number(updateInfo.percent) || 0)))}%</b>
+            </div>
+            <div
+              className="update-progress-track"
+              role="progressbar"
+              aria-label="Software update download progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(Math.max(0, Math.min(100, Number(updateInfo.percent) || 0)))}
+            >
+              <div className="update-progress-fill" style={{ width: `${Math.max(0, Math.min(100, Number(updateInfo.percent) || 0))}%` }} />
+            </div>
+            <small>Please keep the app open. You can continue working while the update downloads.</small>
+          </section>
+        )}
+
+        {updateInfo.status === "downloaded" && (
+          <section className="update-ready-panel" aria-live="polite">
+            <div>
+              <strong>Update ready to install</strong>
+              <span>Version {updateInfo.version || "latest"} has downloaded successfully.</span>
+            </div>
+            <button type="button" className="primary-button" onClick={() => void studio.installUpdate()}>
+              Restart to Install
+            </button>
+          </section>
+        )}
+
+        {updateInfo.status === "error" && updateInfo.message && (
+          <div className="alert error-alert"><span>Update check failed: {updateInfo.message}</span></div>
         )}
 
         {(message || error) && (
