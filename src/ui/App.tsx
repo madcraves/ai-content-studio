@@ -635,7 +635,7 @@ function App() {
         license: featuredImage.license,
         attribution: featuredImage.attribution,
       };
-      let content = String(article.content || "").replace(/<!--\s*MADCRAVES_FEATURED_IMAGE:[\s\S]*?-->/i, "").replace(/<figure\b[^>]*data-madcraves-image=["\']true["\'][\s\S]*?<\/figure>/gi, "");
+      let content = String(article.content || "").replace(/<!--\\s*MADCRAVES_FEATURED_IMAGE:[\\s\\S]*?-->/i, "").replace(/<figure\\b[^>]*data-madcraves-image="true"[\\s\\S]*?<\\/figure>/gi, "");
       content = `<!-- MADCRAVES_FEATURED_IMAGE:${encodeURIComponent(JSON.stringify(featuredMeta))} -->\n` + content;
       const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       for (const image of inlineImages) {
