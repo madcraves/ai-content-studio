@@ -17,6 +17,10 @@ export class Database {
     this.db.pragma("busy_timeout = 5000");
 
     this.initialize();
+    const providerColumns = this.db.prepare("PRAGMA table_info(providers)").all() as any[];
+    if (!providerColumns.some((column) => column.name === "base_url")) {
+      this.db.exec("ALTER TABLE providers ADD COLUMN base_url TEXT");
+    }
   }
 
   // --------------------------------------------------
@@ -219,6 +223,7 @@ export class Database {
           SET name = ?,
               provider = ?,
               model = ?,
+              base_url = ?,
               api_key = ?,
               encrypted = ?,
               enabled = ?
@@ -227,6 +232,7 @@ export class Database {
           provider.name,
           provider.provider,
           provider.model,
+          provider.base_url || provider.baseUrl || null,
           apiKey,
           provider.encrypted ? 1 : 0,
           provider.enabled === false ? 0 : 1,
@@ -245,6 +251,7 @@ export class Database {
         name,
         provider,
         model,
+        base_url,
         api_key,
         encrypted,
         enabled
@@ -254,6 +261,7 @@ export class Database {
       provider.name,
       provider.provider,
       provider.model,
+      provider.base_url || provider.baseUrl || null,
       apiKey,
       provider.encrypted ? 1 : 0,
       provider.enabled === false ? 0 : 1
@@ -272,11 +280,16 @@ export class Database {
         name,
         provider,
         model,
+        base_url,
         enabled,
         created_at
       FROM providers
       ORDER BY id DESC
     `).all() as any[];
+  }
+
+  getProvider(id: number): any {
+    return this.db.prepare("SELECT * FROM providers WHERE id = ?").get(id) as any;
   }
 
   getEnabledProviders(): any[] {
