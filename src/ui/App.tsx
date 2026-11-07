@@ -76,6 +76,7 @@ function App() {
   const [stats, setStats] = useState<any>({});
 
   const [online, setOnline] = useState(true);
+  const [updateInfo, setUpdateInfo] = useState<any>({ status: "idle" });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -207,6 +208,13 @@ function App() {
     return () => {
       active = false;
     };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    studio.getUpdateStatus?.().then((status: any) => { if (active && status) setUpdateInfo(status); }).catch(() => {});
+    const unsubscribe = studio.onUpdateStatus?.((status: any) => setUpdateInfo(status));
+    return () => { active = false; if (typeof unsubscribe === "function") unsubscribe(); };
   }, []);
 
   useEffect(() => {
@@ -783,6 +791,15 @@ function App() {
           </div>
 
           <div className="topbar-actions">
+            {updateInfo.status === "downloaded" ? (
+              <button type="button" className="primary-button" onClick={() => void studio.installUpdate()}>
+                Restart to Update {updateInfo.version ? `(${updateInfo.version})` : ""}
+              </button>
+            ) : (
+              <button type="button" className="secondary-button" disabled={updateInfo.status === "checking" || updateInfo.status === "downloading"} title={updateInfo.message || "Automatically checks for updates"} onClick={() => void studio.checkForUpdates().then(setUpdateInfo).catch((e: any) => notify(e.message, true))}>
+                {updateInfo.status === "downloading" ? (updateInfo.message || "Downloading update...") : updateInfo.status === "checking" ? "Checking updates..." : "Check updates"}
+              </button>
+            )}
             <span className={`connection-label ${online ? "online" : "offline"}`}>
               {online ? "● Online" : "● Offline"}
             </span>
@@ -797,6 +814,10 @@ function App() {
             </button>
           </div>
         </header>
+
+        {updateInfo.message && updateInfo.status !== "idle" && updateInfo.status !== "latest" && (
+          <div className="alert success-alert"><span>{updateInfo.message}</span></div>
+        )}
 
         {(message || error) && (
           <div className={`alert ${error ? "error-alert" : "success-alert"}`}>
@@ -1517,7 +1538,7 @@ function App() {
 
         <footer className="app-footer">
           <span>© MadCraves</span>
-          <span>AI Content Studio · Version 1.0.0</span>
+          <span>AI Content Studio · Version {updateInfo.version || "Current"}</span>
         </footer>
       </main>
     </div>
