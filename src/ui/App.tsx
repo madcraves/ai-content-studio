@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import "./styles.css";
 
 const studio = window.studio as any;
@@ -11,31 +11,57 @@ type Page =
   | "Websites"
   | "AI Providers";
 
-const PROVIDERS = [
+type Provider = {
+  id: string;
+  name: string;
+  description: string;
+  model: string;
+};
+
+const PROVIDERS: Provider[] = [
   {
     id: "gemini",
     name: "Google Gemini",
-    description: "Google's advanced AI models",
-    defaultModel: "gemini-3.5-flash"
+    description: "Google AI article generation",
+    model: "gemini-3.5-flash",
   },
   {
     id: "groq",
     name: "Groq",
-    description: "Ultra-fast AI inference",
-    defaultModel: "openai/gpt-oss-120b"
+    description: "Fast AI inference",
+    model: "openai/gpt-oss-120b",
   },
   {
     id: "openrouter",
     name: "OpenRouter",
-    description: "Access multiple AI models",
-    defaultModel: "openai/gpt-4o-mini"
-  }
+    description: "Multi-model AI gateway",
+    model: "openai/gpt-4o-mini",
+  },
 ];
 
-export default function App() {
-  // ------------------------------------------
-  // LICENSE STATE
-  // ------------------------------------------
+const NAVIGATION: Page[] = [
+  "Dashboard",
+  "AI Article Generator",
+  "Article Library",
+  "Content Scheduler",
+  "Websites",
+  "AI Providers",
+];
+
+const emptyMessage = "No records found.";
+
+function formatDate(value: any) {
+  if (!value) return "—";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  return date.toLocaleString();
+}
+
+function App() {
+  const [page, setPage] = useState<Page>("Dashboard");
 
   const [licenseChecking, setLicenseChecking] = useState(true);
   const [licenseStatus, setLicenseStatus] = useState<any>(null);
@@ -43,874 +69,1263 @@ export default function App() {
   const [activationCode, setActivationCode] = useState("");
   const [licenseLoading, setLicenseLoading] = useState(false);
 
-  // ------------------------------------------
-  // APPLICATION STATE
-  // ------------------------------------------
-
-  const [page, setPage] = useState<Page>("Dashboard");
-
   const [sites, setSites] = useState<any[]>([]);
   const [providers, setProviders] = useState<any[]>([]);
   const [articles, setArticles] = useState<any[]>([]);
   const [schedules, setSchedules] = useState<any[]>([]);
-
   const [stats, setStats] = useState<any>({});
-  const [online, setOnline] = useState<boolean | null>(null);
 
-  const [providerModels, setProviderModels] = useState<Record<string, string>>({
-    gemini: "gemini-3.5-flash",
-    groq: "openai/gpt-oss-120b",
-    openrouter: "openai/gpt-4o-mini"
-  });
+  const [online, setOnline] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
 
-  const [providerKeys, setProviderKeys] = useState<Record<string, string>>({});
-  const [providerStatus, setProviderStatus] = useState<Record<string, string>>({});
+  const [providerStatus, setProviderStatus] = useState<
+    Record<string, string>
+  >({});
   const [providerLoading, setProviderLoading] = useState<string | null>(null);
 
   const [siteName, setSiteName] = useState("");
   const [siteUrl, setSiteUrl] = useState("");
   const [siteToken, setSiteToken] = useState("");
-  const [siteStatus, setSiteStatus] = useState<Record<number, string>>({});
-  const [siteLoading, setSiteLoading] = useState<number | null>(null);
+  const [siteLoading, setSiteLoading] = useState(false);
+  const [siteStatus, setSiteStatus] = useState<Record<string, string>>({});
 
   const [topic, setTopic] = useState("");
   const [keyword, setKeyword] = useState("");
-  const [wordCount, setWordCount] = useState("1500");
+  const [wordCount, setWordCount] = useState("2000");
   const [tone, setTone] = useState("Professional");
   const [instructions, setInstructions] = useState("");
-
-  const [scheduleTopic, setScheduleTopic] = useState("");
-  const [scheduleSite, setScheduleSite] = useState("");
-  const [scheduleDate, setScheduleDate] = useState("");
+  const [articleLoading, setArticleLoading] = useState(false);
 
   const [editingArticle, setEditingArticle] = useState<any>(null);
 
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
+  const [scheduleTopic, setScheduleTopic] = useState("");
+  const [scheduleKeyword, setScheduleKeyword] = useState("");
+  const [scheduleDate, setScheduleDate] = useState("");
+  const [scheduleTime, setScheduleTime] = useState("");
+  const [scheduleLoading, setScheduleLoading] = useState(false);
 
-  const menu: Page[] = [
-    "Dashboard",
-    "AI Article Generator",
-    "Article Library",
-    "Content Scheduler",
-    "Websites",
-    "AI Providers"
-  ];
+  const [publishingArticle, setPublishingArticle] = useState(false);
 
-  // ------------------------------------------
-  // LICENSE CHECK
-  // ------------------------------------------
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function checkLicense() {
-      try {
-        const [status, id] = await Promise.all([
-          studio.getLicenseStatus(),
-          studio.getMachineId()
-        ]);
-
-        if (cancelled) return;
-
-        setMachineId(id || "");
-        setLicenseStatus(status || { activated: false });
-
-        if (status?.activated) {
-          await loadData();
-          await refreshNetwork();
-        }
-      } catch (err: any) {
-        if (!cancelled) {
-          setLicenseStatus({
-            activated: false,
-            message: err?.message || "Unable to check license."
-          });
-        }
-      } finally {
-        if (!cancelled) {
-          setLicenseChecking(false);
-        }
-      }
-    }
-
-    void checkLicense();
-
-    return () => {
-      cancelled = true;
-    };
+  const notify = useCallback((text: string, isError = false) => {
+    setMessage(isError ? "" : text);
+    setError(isError ? text : "");
   }, []);
 
-  // ------------------------------------------
-  // LOAD APPLICATION DATA
-  // ------------------------------------------
+  const clearNotifications = useCallback(() => {
+    setMessage("");
+    setError("");
+  }, []);
 
-  async function loadData() {
-    if (!licenseStatus?.activated &&
-        !licenseChecking &&
-        licenseStatus !== null) {
+  const loadData = useCallback(async (force = false) => {
+    if (
+      !force &&
+      !licenseStatus?.activated &&
+      !licenseChecking &&
+      licenseStatus !== null
+    ) {
       return;
     }
 
-    setLoading(true);
-
     try {
       const [
-        dashboard,
-        websiteList,
-        providerList,
-        articleList,
-        scheduleList
+        dashboardData,
+        siteData,
+        providerData,
+        articleData,
+        scheduleData,
       ] = await Promise.all([
         studio.dashboard(),
         studio.listSites(),
         studio.listProviders(),
         studio.listArticles(),
-        studio.listSchedules()
+        studio.listSchedules(),
       ]);
 
-      setStats(dashboard || {});
-      setSites(websiteList || []);
-      setProviders(providerList || []);
-      setArticles(articleList || []);
-      setSchedules(scheduleList || []);
-
-      const configured: Record<string, string> = {};
-
-      for (const provider of providerList || []) {
-        const id = String(
-          provider.provider || provider.name
-        ).toLowerCase();
-
-        configured[id] = "connected";
-      }
-
-      setProviderStatus(previous => ({
-        ...configured,
-        ...previous
-      }));
+      setStats(dashboardData || {});
+      setSites(Array.isArray(siteData) ? siteData : []);
+      setProviders(Array.isArray(providerData) ? providerData : []);
+      setArticles(Array.isArray(articleData) ? articleData : []);
+      setSchedules(Array.isArray(scheduleData) ? scheduleData : []);
     } catch (err: any) {
-      setError(err?.message || "Unable to load application data.");
-    } finally {
-      setLoading(false);
+      console.error("Data loading error:", err);
+      notify(err?.message || "Unable to load application data.", true);
     }
-  }
+  }, [licenseStatus, licenseChecking, notify]);
 
-  async function refreshNetwork() {
+  const refreshNetwork = useCallback(async () => {
     try {
       const result = await studio.getConnectionStatus();
       setOnline(Boolean(result?.online));
     } catch {
       setOnline(false);
     }
-  }
+  }, []);
 
-  // ------------------------------------------
-  // ACTIVATE LICENSE
-  // ------------------------------------------
+  useEffect(() => {
+    let active = true;
 
-  async function handleActivation(e: React.FormEvent) {
-    e.preventDefault();
+    async function initialize() {
+      try {
+        const [status, id] = await Promise.all([
+          studio.getLicenseStatus(),
+          studio.getMachineId(),
+        ]);
+
+        if (!active) return;
+
+        setLicenseStatus(status);
+        setMachineId(id || "");
+
+        if (status?.activated) {
+          await loadData(true);
+        }
+      } catch (err) {
+        console.error("Initialization error:", err);
+      } finally {
+        if (active) setLicenseChecking(false);
+      }
+
+      if (active) await refreshNetwork();
+    }
+
+    void initialize();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = studio.onNetworkStatus?.(
+      (status: { online: boolean }) => {
+        setOnline(Boolean(status?.online));
+      }
+    );
+
+    return () => {
+      if (typeof unsubscribe === "function") unsubscribe();
+    };
+  }, []);
+
+  async function activateLicense() {
+    clearNotifications();
 
     if (!activationCode.trim()) {
-      setError("Please enter your activation code.");
+      notify("Please enter your license activation code.", true);
       return;
     }
 
     setLicenseLoading(true);
-    setError("");
-    setMessage("");
 
     try {
-      const result = await studio.activateLicense(
-        activationCode.trim()
-      );
+      const result = await studio.activateLicense(activationCode.trim());
 
       if (!result?.activated) {
-        throw new Error(
-          result?.message || "License activation failed."
-        );
+        notify(result?.message || "License activation failed.", true);
+        return;
       }
 
       setLicenseStatus(result);
       setActivationCode("");
 
-      setMessage("License activated successfully!");
-
-      await loadData();
-      await refreshNetwork();
+      await loadData(true);
 
       setPage("Dashboard");
+      notify("License activated successfully.");
     } catch (err: any) {
-      setError(err?.message || "License activation failed.");
+      notify(err?.message || "License activation failed.", true);
     } finally {
       setLicenseLoading(false);
     }
   }
 
-  // ------------------------------------------
-  // NETWORK MONITORING
-  // ------------------------------------------
-
-  useEffect(() => {
-    if (!licenseStatus?.activated) return;
-
-    void refreshNetwork();
-
-    const unsubscribe = studio.onNetworkStatus?.(
-      (status: boolean) => setOnline(status)
-    );
-
-    const timer = window.setInterval(
-      refreshNetwork,
-      15000
-    );
-
-    return () => {
-      window.clearInterval(timer);
-      unsubscribe?.();
-    };
-  }, [licenseStatus?.activated]);
-
-  // ------------------------------------------
-  // NOTIFICATIONS
-  // ------------------------------------------
-
-  function notify(text: string) {
-    setMessage(text);
-    setError("");
-  }
-
-  function showError(err: any) {
-    setError(
-      err?.message || "Something went wrong."
-    );
-    setMessage("");
-  }
-
-  // ------------------------------------------
-  // AI PROVIDERS
-  // ------------------------------------------
-
-  async function saveProvider(providerId: string) {
-    const model = providerModels[providerId];
-    const apiKey = providerKeys[providerId] || "";
-
-    if (!model.trim()) {
-      setError("Please enter a model ID.");
-      return;
-    }
-
-    if (!apiKey.trim()) {
-      setError("Please enter the API key.");
-      return;
-    }
-
-    setProviderLoading(providerId);
-
-    try {
-      const provider = PROVIDERS.find(p => p.id === providerId)!;
-
-      await studio.saveProvider({
-        name: provider.name,
-        provider: providerId,
-        model,
-        apiKey,
-        enabled: true
-      });
-
-      setProviderKeys(previous => ({
-        ...previous,
-        [providerId]: ""
-      }));
-
-      setProviderStatus(previous => ({
-        ...previous,
-        [providerId]: "connected"
-      }));
-
-      notify(`${provider.name} API key saved securely.`);
-      await loadData();
-    } catch (err) {
-      showError(err);
-    } finally {
-      setProviderLoading(null);
-    }
-  }
-
   async function testProvider(providerId: string) {
+    clearNotifications();
     setProviderLoading(providerId);
+    setProviderStatus((previous) => ({
+      ...previous,
+      [providerId]: "Testing...",
+    }));
 
     try {
-      setProviderStatus(previous => ({
-        ...previous,
-        [providerId]: "testing"
-      }));
-
       const result = await studio.testProvider(providerId);
 
-      setProviderStatus(previous => ({
+      if (result?.ok || result?.success) {
+        setProviderStatus((previous) => ({
+          ...previous,
+          [providerId]: "Connected",
+        }));
+        notify(`${providerId} connection successful.`);
+      } else {
+        const detail = result?.message || "Connection failed.";
+
+        setProviderStatus((previous) => ({
+          ...previous,
+          [providerId]: "Failed",
+        }));
+
+        notify(detail, true);
+      }
+    } catch (err: any) {
+      setProviderStatus((previous) => ({
         ...previous,
-        [providerId]: result?.ok ? "connected" : "disconnected"
+        [providerId]: "Failed",
       }));
 
-      notify(result?.message || "Provider connection successful.");
-    } catch (err) {
-      setProviderStatus(previous => ({
-        ...previous,
-        [providerId]: "disconnected"
-      }));
-
-      showError(err);
+      notify(err?.message || "Provider connection test failed.", true);
     } finally {
       setProviderLoading(null);
     }
   }
 
-  // ------------------------------------------
-  // WEBSITES
-  // ------------------------------------------
+  async function addWebsite(event?: React.FormEvent) {
+    event?.preventDefault();
+    clearNotifications();
 
-  async function addWebsite(e: React.FormEvent) {
-    e.preventDefault();
+    if (!siteName.trim() || !siteUrl.trim() || !siteToken.trim()) {
+      notify("Please complete all website fields.", true);
+      return;
+    }
+
+    setSiteLoading(true);
 
     try {
       await studio.addSite({
-        name: siteName,
-        url: siteUrl,
-        token: siteToken
+        name: siteName.trim(),
+        url: siteUrl.trim(),
+        token: siteToken.trim(),
       });
 
       setSiteName("");
       setSiteUrl("");
       setSiteToken("");
 
-      notify("Website saved. You can now test its connection.");
-      await loadData();
-    } catch (err) {
-      showError(err);
-    }
-  }
-
-  async function testWebsite(id: number) {
-    setSiteLoading(id);
-
-    try {
-      setSiteStatus(previous => ({
-        ...previous,
-        [id]: "testing"
-      }));
-
-      await studio.testSite(id);
-
-      setSiteStatus(previous => ({
-        ...previous,
-        [id]: "connected"
-      }));
-
-      notify("Website connection successful.");
-    } catch (err) {
-      setSiteStatus(previous => ({
-        ...previous,
-        [id]: "disconnected"
-      }));
-
-      showError(err);
+      await loadData(true);
+      notify("Website added successfully.");
+    } catch (err: any) {
+      notify(err?.message || "Unable to add website.", true);
     } finally {
-      setSiteLoading(null);
+      setSiteLoading(false);
     }
   }
 
-  async function deleteWebsite(id: number) {
-    if (!window.confirm("Delete this website?")) return;
+  async function testWebsite(id: number | string) {
+    clearNotifications();
+
+    setSiteStatus((previous) => ({
+      ...previous,
+      [String(id)]: "Testing...",
+    }));
 
     try {
-      await studio.deleteSite(id);
-      notify("Website deleted.");
-      await loadData();
-    } catch (err) {
-      showError(err);
+      const result = await studio.testSite(id);
+
+      if (result?.ok || result?.success) {
+        setSiteStatus((previous) => ({
+          ...previous,
+          [String(id)]: "Connected",
+        }));
+        notify(result?.message || "WordPress connection successful.");
+      } else {
+        setSiteStatus((previous) => ({
+          ...previous,
+          [String(id)]: "Failed",
+        }));
+        notify(result?.message || "WordPress connection failed.", true);
+      }
+    } catch (err: any) {
+      setSiteStatus((previous) => ({
+        ...previous,
+        [String(id)]: "Failed",
+      }));
+      notify(err?.message || "Website connection test failed.", true);
     }
   }
 
-  // ------------------------------------------
-  // ARTICLE GENERATION
-  // ------------------------------------------
-
-  async function generateArticle(e: React.FormEvent) {
-    e.preventDefault();
-
-    if (!topic.trim()) {
-      setError("Please enter an article topic.");
+  async function deleteWebsite(id: number | string) {
+    if (!window.confirm("Are you sure you want to remove this website?")) {
       return;
     }
 
-    setLoading(true);
+    clearNotifications();
+
+    try {
+      await studio.deleteSite(id);
+      await loadData(true);
+      notify("Website removed.");
+    } catch (err: any) {
+      notify(err?.message || "Unable to remove website.", true);
+    }
+  }
+
+  async function generateArticle(event?: React.FormEvent) {
+    event?.preventDefault();
+    clearNotifications();
+
+    if (!topic.trim()) {
+      notify("Please enter an article topic.", true);
+      return;
+    }
+
+    if (!keyword.trim()) {
+      notify("Please enter a primary SEO keyword.", true);
+      return;
+    }
+
+    const count = Number(wordCount);
+
+    if (!Number.isFinite(count) || count < 300 || count > 10000) {
+      notify("Word count must be between 300 and 10,000.", true);
+      return;
+    }
+
+    setArticleLoading(true);
 
     try {
       const result = await studio.generate({
-        topic,
-        keyword,
-        wordCount: Number(wordCount),
+        topic: topic.trim(),
+        keyword: keyword.trim(),
+        wordCount: count,
         tone,
-        instructions
+        instructions: instructions.trim(),
       });
 
-      const count = result?.results?.length ?? 0;
+      if (result?.ok === false) {
+        throw new Error(result?.message || "Article generation failed.");
+      }
+
+      await loadData(true);
+      setPage("Article Library");
+
+      notify("Article generation completed successfully.");
+    } catch (err: any) {
+      notify(err?.message || "Article generation failed.", true);
+    } finally {
+      setArticleLoading(false);
+    }
+  }
+
+  async function saveArticleEdit() {
+    if (!editingArticle) return;
+
+    clearNotifications();
+
+    try {
+      await studio.saveEdit(editingArticle);
+      setEditingArticle(null);
+      await loadData(true);
+      notify("Article updated successfully.");
+    } catch (err: any) {
+      notify(err?.message || "Unable to save article.", true);
+    }
+  }
+
+  async function publishArticle(articleId: number | string) {
+    clearNotifications();
+
+    if (!sites.length) {
+      notify("Please add a WordPress website first.", true);
+      return;
+    }
+
+    const options = sites
+      .map((site: any) => `${site.id}: ${site.name} (${site.url})`)
+      .join("\n");
+
+    const selected = window.prompt(
+      `Enter the website ID where you want to save this article as a WordPress draft:\n\n${options}`
+    );
+
+    if (!selected) return;
+
+    const site = sites.find(
+      (item: any) => String(item.id) === selected.trim()
+    );
+
+    if (!site) {
+      notify("Invalid website ID.", true);
+      return;
+    }
+
+    setPublishingArticle(true);
+
+    try {
+      const result = await studio.publish({
+        articleId,
+        siteId: site.id,
+      });
+
+      if (result?.ok === false || result?.success === false) {
+        throw new Error(result?.message || "WordPress publishing failed.");
+      }
+
+      await loadData(true);
 
       notify(
-        count
-          ? `${count} article version(s) generated successfully.`
-          : "Generation completed."
+        result?.message || "Article successfully sent to WordPress drafts."
       );
+    } catch (err: any) {
+      notify(err?.message || "Unable to send article to WordPress.", true);
+    } finally {
+      setPublishingArticle(false);
+    }
+  }
 
-      setTopic("");
-      await loadData();
-      setPage("Article Library");
-    } catch (err) {
-      showError(err);
+  async function addSchedule(event?: React.FormEvent) {
+    event?.preventDefault();
+    clearNotifications();
+
+    if (!scheduleTopic.trim() || !scheduleKeyword.trim()) {
+      notify("Enter a topic and primary keyword.", true);
+      return;
+    }
+
+    if (!scheduleDate || !scheduleTime) {
+      notify("Select a schedule date and time.", true);
+      return;
+    }
+
+    setScheduleLoading(true);
+
+    try {
+      const scheduledAt = new Date(
+        `${scheduleDate}T${scheduleTime}`
+      ).toISOString();
+
+      await studio.addSchedule({
+        topic: scheduleTopic.trim(),
+        keyword: scheduleKeyword.trim(),
+        scheduledAt,
+        scheduled_at: scheduledAt,
+        wordCount: 2000,
+      });
+
+      setScheduleTopic("");
+      setScheduleKeyword("");
+      setScheduleDate("");
+      setScheduleTime("");
+
+      await loadData(true);
+      notify("Content schedule created.");
+    } catch (err: any) {
+      notify(err?.message || "Unable to create schedule.", true);
+    } finally {
+      setScheduleLoading(false);
+    }
+  }
+
+  async function deleteSchedule(id: number | string) {
+    if (!window.confirm("Delete this scheduled task?")) return;
+
+    clearNotifications();
+
+    try {
+      await studio.deleteSchedule(id);
+      await loadData(true);
+      notify("Scheduled task deleted.");
+    } catch (err: any) {
+      notify(err?.message || "Unable to delete schedule.", true);
+    }
+  }
+
+  async function refreshAll() {
+    setLoading(true);
+    clearNotifications();
+
+    try {
+      await loadData(true);
+      await refreshNetwork();
+      notify("Data refreshed.");
     } finally {
       setLoading(false);
     }
   }
 
-  // ------------------------------------------
-  // ARTICLE EDITING
-  // ------------------------------------------
+  function renderProviderStatus(providerId: string) {
+    const status = providerStatus[providerId];
 
-  async function saveArticle(article: any) {
-    try {
-      await studio.saveEdit(article);
-      setEditingArticle(null);
-      notify("Article saved successfully.");
-      await loadData();
-    } catch (err) {
-      showError(err);
+    if (status === "Connected") {
+      return <span className="connected">● Connected</span>;
     }
+
+    if (status === "Failed") {
+      return <span className="error-text">● Failed</span>;
+    }
+
+    if (status === "Testing...") {
+      return <span className="muted">Testing...</span>;
+    }
+
+    return <span className="muted">Not tested</span>;
   }
-
-  // ------------------------------------------
-  // WORDPRESS PUBLISHING
-  // ------------------------------------------
-
-  async function sendToWordPress(article: any) {
-    if (!sites.length) {
-      setPage("Websites");
-      setError("Connect a WordPress website first.");
-      return;
-    }
-
-    const options = sites
-      .map(site => `${site.id}: ${site.name}`)
-      .join("\n");
-
-    const id = Number(
-      window.prompt(`Select WordPress website ID:\n${options}`)
-    );
-
-    if (!id || !sites.some(site => site.id === id)) return;
-
-    try {
-      await studio.publish({
-        articleId: article.id,
-        siteId: id
-      });
-
-      notify("Article sent to WordPress.");
-      await loadData();
-    } catch (err) {
-      showError(err);
-    }
-  }
-
-  // ------------------------------------------
-  // CONTENT SCHEDULER
-  // ------------------------------------------
-
-  async function addSchedule(e: React.FormEvent) {
-    e.preventDefault();
-
-    try {
-      await studio.addSchedule({
-        title: scheduleTopic,
-        topic: scheduleTopic,
-        siteId: Number(scheduleSite),
-        run_at: new Date(scheduleDate).toISOString(),
-        enabled: true
-      });
-
-      setScheduleTopic("");
-      setScheduleSite("");
-      setScheduleDate("");
-
-      notify("Schedule saved.");
-      await loadData();
-    } catch (err) {
-      showError(err);
-    }
-  }
-
-  async function deleteSchedule(id: number) {
-    try {
-      await studio.deleteSchedule(id);
-      notify("Schedule deleted.");
-      await loadData();
-    } catch (err) {
-      showError(err);
-    }
-  }
-
-  // ------------------------------------------
-  // PROVIDER STATUS
-  // ------------------------------------------
-
-  function renderProviderStatus(id: string) {
-    const status = providerStatus[id];
-
-    if (status === "testing") {
-      return <span className="disconnected">Testing...</span>;
-    }
-
-    if (status === "connected") {
-      return (
-        <span className="connected">
-          <span className="status-dot" />
-          Configured
-        </span>
-      );
-    }
-
-    if (status === "disconnected") {
-      return (
-        <span className="disconnected">
-          <span className="status-dot offline" />
-          Disconnected
-        </span>
-      );
-    }
-
-    return <span className="disconnected">Not configured</span>;
-  }
-
-  // ------------------------------------------
-  // LICENSE LOADING SCREEN
-  // ------------------------------------------
 
   if (licenseChecking) {
     return (
-      <div className="license-screen">
-        <div className="license-card">
-          <div className="license-logo">AI</div>
+      <main className="license-screen">
+        <section className="license-card">
           <h1>MadCraves AI Content Studio</h1>
           <p>Checking your license...</p>
-          <div className="license-spinner" />
-        </div>
-      </div>
+          <div className="loader" />
+        </section>
+      </main>
     );
   }
 
-  // ------------------------------------------
-  // LICENSE ACTIVATION SCREEN
-  // ------------------------------------------
-
   if (!licenseStatus?.activated) {
     return (
-      <div className="license-screen">
-        <div className="license-card">
+      <main className="license-screen">
+        <section className="license-card">
+          <div className="brand-mark">MC</div>
 
-          <div className="license-logo">AI</div>
+          <h1>MadCraves AI Content Studio</h1>
+          <p>Activate your license to continue.</p>
 
-          <div className="license-brand">
-            <strong>MadCraves</strong>
-            <span>AI CONTENT STUDIO</span>
-          </div>
-
-          <div className="license-badge">
-            <span className="status-dot offline" />
-            NOT ACTIVATED
-          </div>
-
-          <h1>Activate Your License</h1>
-
-          <p className="license-description">
-            Activate your AI Content Studio to unlock
-            your complete content management workspace.
-          </p>
-
-          <form onSubmit={handleActivation}>
-
-            <label>Your Machine ID</label>
-
-            <div className="machine-id-group">
-              <input
-                type="text"
-                value={machineId || "Unable to retrieve Machine ID"}
-                readOnly
-              />
-
+          <div className="license-machine">
+            <label>Machine ID</label>
+            <div className="machine-id-row">
+              <code>{machineId || "Loading machine ID..."}</code>
               <button
                 type="button"
-                className="copy-button"
-                disabled={!machineId}
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(machineId);
-                    notify("Machine ID copied successfully.");
-                  } catch {
-                    showError({
-                      message: "Unable to copy Machine ID. Please copy it manually."
-                    });
-                  }
+                onClick={() => {
+                  void navigator.clipboard.writeText(machineId);
+                  notify("Machine ID copied.");
                 }}
               >
                 Copy
               </button>
             </div>
-
-            <label>Activation Code</label>
-
-            <textarea
-              className="activation-textarea"
-              value={activationCode}
-              onChange={e => setActivationCode(e.target.value)}
-              placeholder="Paste your activation code here..."
-              rows={5}
-              required
-            />
-
-            {error && (
-              <div className="license-error">
-                {error}
-              </div>
-            )}
-
-            {message && (
-              <div className="license-success">
-                {message}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              className="activate-button"
-              disabled={licenseLoading || !machineId}
-            >
-              {licenseLoading
-                ? "Activating License..."
-                : "ACTIVATE NOW"}
-            </button>
-
-          </form>
-
-          <div className="license-footer">
-            <span>Secure Offline License Verification</span>
-            <span>Powered by MadCraves</span>
           </div>
 
-        </div>
-      </div>
+          <label htmlFor="activation-code">License Activation Code</label>
+          <textarea
+            id="activation-code"
+            value={activationCode}
+            onChange={(event) => setActivationCode(event.target.value)}
+            placeholder="Paste your activation code here"
+            rows={5}
+          />
+
+          {error && <div className="alert error-alert">{error}</div>}
+
+          <button
+            className="primary-button"
+            type="button"
+            disabled={licenseLoading}
+            onClick={() => void activateLicense()}
+          >
+            {licenseLoading ? "Activating..." : "ACTIVATE NOW"}
+          </button>
+
+          <small>Powered by MadCraves</small>
+        </section>
+      </main>
     );
   }
 
-  // ------------------------------------------
-  // MAIN APPLICATION
-  // ------------------------------------------
-
   return (
-    <div className="app">
-
+    <div className="app-shell">
       <aside className="sidebar">
-
         <div className="brand">
-          <div className="brand-icon">AI</div>
+          <div className="brand-mark">MC</div>
           <div>
-            <h2>Content Studio</h2>
-            <small>Professional AI Workspace</small>
+            <strong>MadCraves</strong>
+            <small>AI Content Studio</small>
           </div>
         </div>
 
-        <div className="menu-label">MAIN WORKSPACE</div>
+        <nav className="navigation">
+          <span className="nav-label">WORKSPACE</span>
 
-        <nav>
-          {menu.map(item => (
+          {NAVIGATION.map((item) => (
             <button
+              type="button"
               key={item}
               className={`nav-item ${page === item ? "active" : ""}`}
               onClick={() => {
+                clearNotifications();
                 setPage(item);
-                setError("");
-                setMessage("");
+                setEditingArticle(null);
               }}
             >
-              {item}
+              {item === "Dashboard" && "▦"}
+              {item === "AI Article Generator" && "✦"}
+              {item === "Article Library" && "▤"}
+              {item === "Content Scheduler" && "◷"}
+              {item === "Websites" && "◎"}
+              {item === "AI Providers" && "◇"}
+              <span>{item}</span>
             </button>
           ))}
         </nav>
 
-        <div className="sidebar-bottom">
-
-          <div className="plan-card">
-            <small>LICENSE STATUS</small>
-            <strong>Activated</strong>
-            <span className="system-status">
-              <span className="status-dot" />
-              Licensed Workspace
-            </span>
-            {licenseStatus?.licensee && (
-              <small>{licenseStatus.licensee}</small>
-            )}
+        <div className="sidebar-footer">
+          <div className="network-indicator">
+            <span className={`status-dot ${online ? "online" : "offline"}`} />
+            {online ? "Internet connected" : "Offline"}
           </div>
-
-          <div className="plan-card">
-            <small>SYSTEM CONNECTION</small>
-            <strong>
-              {online === null
-                ? "Checking connection..."
-                : online
-                ? "Internet connected"
-                : "Internet offline"}
-            </strong>
-            <span className="system-status">
-              <span className={`status-dot ${online ? "" : "offline"}`} />
-              {online === null ? "Checking" : online ? "Online" : "Offline"}
-            </span>
-          </div>
-
-          <div className="profile">
-            <div className="avatar">AI</div>
-            <div>
-              <strong>Workspace Owner</strong>
-              <small>Local desktop account</small>
-            </div>
-          </div>
-
+          <small>MadCraves AI Content Studio</small>
+          <small>Version 1.0.0</small>
         </div>
       </aside>
 
-      <main className="main">
-
+      <main className="main-content">
         <header className="topbar">
           <div>
-            <h1>{page}</h1>
-            <p>Manage your AI content operations.</p>
+            <h2>{page}</h2>
+            <p>Manage your AI content workflow</p>
           </div>
 
-          <div className="top-actions">
-            <span className={`system-status ${online === false ? "offline" : ""}`}>
-              <span className={`status-dot ${online === false ? "offline" : ""}`} />
-              {online === null ? "Checking" : online ? "Online" : "Offline"}
+          <div className="topbar-actions">
+            <span className={`connection-label ${online ? "online" : "offline"}`}>
+              {online ? "● Online" : "● Offline"}
             </span>
 
             <button
-              className="refresh"
-              onClick={() => {
-                void loadData();
-                void refreshNetwork();
-              }}
+              type="button"
+              className="secondary-button"
+              disabled={loading}
+              onClick={() => void refreshAll()}
             >
-              ↻ Refresh
+              {loading ? "Refreshing..." : "↻ Refresh"}
             </button>
           </div>
         </header>
 
-        {message && <div className="notice success">{message}</div>}
-        {error && <div className="notice error">{error}</div>}
-
-        {/* DASHBOARD */}
-
-        {page === "Dashboard" && (
-          <>
-            <section className="hero">
-              <div className="hero-content">
-                <span className="hero-tag">AI CONTENT AUTOMATION</span>
-                <h2>Build better content. Faster.</h2>
-                <p>
-                  Generate SEO articles, manage multiple WordPress
-                  websites and organize your entire content workflow
-                  from one workspace.
-                </p>
-                <button onClick={() => setPage("AI Article Generator")}>
-                  + Create New Article
-                </button>
-              </div>
-            </section>
-
-            <section className="stats">
-              {[
-                ["Connected Websites", sites.length],
-                ["Configured AI Providers", providers.length],
-                ["Articles Created", stats.totalArticles ?? articles.length],
-                ["Scheduled Tasks", stats.scheduled ?? schedules.length]
-              ].map(([label, value]) => (
-                <div className="stat-card" key={String(label)}>
-                  <div className="stat-top">
-                    <label>{label}</label>
-                  </div>
-                  <strong>{loading ? "..." : value}</strong>
-                </div>
-              ))}
-            </section>
-
-            <section className="panel">
-              <div className="panel-heading">
-                <h3>Recent Articles</h3>
-                <button onClick={() => setPage("Article Library")}>
-                  View Library
-                </button>
-              </div>
-
-              {articles.slice(0, 6).map(article => (
-                <div className="list-row" key={article.id}>
-                  <div className="list-info">
-                    <strong>{article.title}</strong>
-                    <small>{article.status || "Generated"}</small>
-                  </div>
-                </div>
-              ))}
-
-              {articles.length === 0 && (
-                <div className="empty">
-                  <h4>No articles yet</h4>
-                  <p>Your generated articles will appear here.</p>
-                </div>
-              )}
-            </section>
-          </>
+        {(message || error) && (
+          <div className={`alert ${error ? "error-alert" : "success-alert"}`}>
+            <span>{error || message}</span>
+            <button type="button" onClick={clearNotifications}>
+              ×
+            </button>
+          </div>
         )}
 
-        {/* AI PROVIDERS */}
+        <div className="page-content">
+          {/* DASHBOARD */}
+          {page === "Dashboard" && (
+            <>
+              <section className="welcome-panel">
+                <div>
+                  <span className="eyebrow">CONTENT WORKSPACE</span>
+                  <h1>Welcome to your AI Content Studio</h1>
+                  <p>
+                    Generate, manage and send SEO content to your WordPress
+                    websites.
+                  </p>
+                </div>
 
-        {page === "AI Providers" && (
-          <>
-            <section className="panel">
-              <div className="panel-heading">
-                <h3>AI Provider Connections</h3>
-                <span className="connected">
-                  {providers.length} configured
-                </span>
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={() => setPage("AI Article Generator")}
+                >
+                  + Create New Article
+                </button>
+              </section>
+
+              <div className="stats-grid">
+                {[
+                  {
+                    label: "Connected Websites",
+                    value: sites.length,
+                    icon: "◎",
+                  },
+                  {
+                    label: "Available AI Providers",
+                    value: PROVIDERS.length,
+                    icon: "✦",
+                  },
+                  {
+                    label: "Generated Articles",
+                    value: articles.length,
+                    icon: "▤",
+                  },
+                  {
+                    label: "Scheduled Tasks",
+                    value: schedules.length,
+                    icon: "◷",
+                  },
+                ].map((stat) => (
+                  <section className="stat-card" key={stat.label}>
+                    <div className="stat-icon">{stat.icon}</div>
+                    <div>
+                      <span>{stat.label}</span>
+                      <strong>{stat.value}</strong>
+                    </div>
+                  </section>
+                ))}
               </div>
 
-              <p>
-                Configure Gemini, Groq and OpenRouter independently.
-                All three providers can remain enabled together.
-              </p>
+              <div className="dashboard-grid">
+                <section className="panel">
+                  <div className="panel-heading">
+                    <h3>Recent Articles</h3>
+                    <button
+                      type="button"
+                      className="text-button"
+                      onClick={() => setPage("Article Library")}
+                    >
+                      View all →
+                    </button>
+                  </div>
+
+                  {articles.length === 0 ? (
+                    <p className="empty-state">{emptyMessage}</p>
+                  ) : (
+                    <div className="simple-list">
+                      {articles.slice(0, 5).map((article: any) => (
+                        <div className="list-row" key={article.id}>
+                          <div>
+                            <strong>{article.title || "Untitled article"}</strong>
+                            <small>{formatDate(article.created_at)}</small>
+                          </div>
+                          <span className="status-badge">
+                            {article.status || "Generated"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                <section className="panel">
+                  <div className="panel-heading">
+                    <h3>Workspace Overview</h3>
+                  </div>
+
+                  <div className="overview-item">
+                    <span>Internet connection</span>
+                    <strong>{online ? "Connected" : "Offline"}</strong>
+                  </div>
+
+                  <div className="overview-item">
+                    <span>License</span>
+                    <strong>Active</strong>
+                  </div>
+
+                  <div className="overview-item">
+                    <span>AI providers</span>
+                    <strong>{PROVIDERS.length} available</strong>
+                  </div>
+
+                  <div className="overview-item">
+                    <span>WordPress websites</span>
+                    <strong>{sites.length} connected</strong>
+                  </div>
+                </section>
+              </div>
+            </>
+          )}
+
+          {/* AI ARTICLE GENERATOR */}
+          {page === "AI Article Generator" && (
+            <section className="panel generator-panel">
+              <div className="panel-heading">
+                <div>
+                  <h3>Article Brief</h3>
+                  <p>Define your topic and SEO requirements.</p>
+                </div>
+                <span className="status-badge">AI Powered</span>
+              </div>
+
+              <form onSubmit={generateArticle}>
+                <div className="form-grid">
+                  <div className="form-group full-width">
+                    <label>Article Topic *</label>
+                    <input
+                      value={topic}
+                      onChange={(event) => setTopic(event.target.value)}
+                      placeholder="e.g. Complete Guide to Umrah Packages"
+                      required
+                    />
+                  </div>
+
+                  <div className="form-group full-width">
+                    <label>Primary SEO Keyword *</label>
+                    <input
+                      value={keyword}
+                      onChange={(event) => setKeyword(event.target.value)}
+                      placeholder="Enter your primary keyword"
+                      required
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Target Word Count</label>
+                    <select
+                      value={wordCount}
+                      onChange={(event) => setWordCount(event.target.value)}
+                    >
+                      <option value="500">500 words</option>
+                      <option value="1000">1,000 words</option>
+                      <option value="1500">1,500 words</option>
+                      <option value="2000">2,000 words</option>
+                      <option value="2500">2,500 words</option>
+                      <option value="3000">3,000 words</option>
+                      <option value="4000">4,000 words</option>
+                      <option value="5000">5,000 words</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Writing Tone</label>
+                    <select
+                      value={tone}
+                      onChange={(event) => setTone(event.target.value)}
+                    >
+                      <option>Professional</option>
+                      <option>Informative</option>
+                      <option>Conversational</option>
+                      <option>Friendly</option>
+                      <option>Persuasive</option>
+                      <option>Technical</option>
+                      <option>Academic</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group full-width">
+                    <label>Additional Instructions</label>
+                    <textarea
+                      rows={6}
+                      value={instructions}
+                      onChange={(event) => setInstructions(event.target.value)}
+                      placeholder="Add instructions, target audience, business details, SEO requirements or anything else the AI should consider..."
+                    />
+                  </div>
+                </div>
+
+                <div className="generator-footer">
+                  <span className="muted">
+                    Your article will be generated and saved in Article Library.
+                  </span>
+
+                  <button
+                    type="submit"
+                    className="primary-button"
+                    disabled={articleLoading}
+                  >
+                    {articleLoading ? "Generating Article..." : "✦ Generate Article"}
+                  </button>
+                </div>
+              </form>
             </section>
+          )}
 
-            <div className="provider-grid">
-              {PROVIDERS.map(provider => {
-                const configured = providers.some(
-                  item =>
-                    String(item.provider || item.name).toLowerCase() === provider.id
-                );
+          {/* ARTICLE LIBRARY */}
+          {page === "Article Library" && (
+            <>
+              <div className="section-toolbar">
+                <div>
+                  <h3>Your Articles</h3>
+                  <p>Review, edit and send articles to WordPress drafts.</p>
+                </div>
 
-                return (
-                  <section className="panel provider-card" key={provider.id}>
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={() => setPage("AI Article Generator")}
+                >
+                  + New Article
+                </button>
+              </div>
+
+              {editingArticle ? (
+                <section className="panel">
+                  <div className="panel-heading">
+                    <h3>Edit Article</h3>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => setEditingArticle(null)}
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Article Title</label>
+                    <input
+                      value={editingArticle.title || ""}
+                      onChange={(event) =>
+                        setEditingArticle({
+                          ...editingArticle,
+                          title: event.target.value,
+                        })
+                      }
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Article Content (HTML)</label>
+                    <textarea
+                      className="article-editor"
+                      rows={22}
+                      value={editingArticle.content || ""}
+                      onChange={(event) =>
+                        setEditingArticle({
+                          ...editingArticle,
+                          content: event.target.value,
+                        })
+                      }
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Excerpt</label>
+                    <textarea
+                      rows={4}
+                      value={editingArticle.excerpt || ""}
+                      onChange={(event) =>
+                        setEditingArticle({
+                          ...editingArticle,
+                          excerpt: event.target.value,
+                        })
+                      }
+                    />
+                  </div>
+
+                  <div className="button-row">
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={() => void saveArticleEdit()}
+                    >
+                      Save Changes
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => setEditingArticle(null)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </section>
+              ) : articles.length === 0 ? (
+                <section className="panel empty-panel">
+                  <div className="empty-icon">▤</div>
+                  <h3>No articles yet</h3>
+                  <p>Generate your first AI article to see it here.</p>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={() => setPage("AI Article Generator")}
+                  >
+                    Create First Article
+                  </button>
+                </section>
+              ) : (
+                <div className="article-grid">
+                  {articles.map((article: any) => (
+                    <section className="panel article-card" key={article.id}>
+                      <div className="panel-heading">
+                        <span className="status-badge">
+                          {article.status || "Generated"}
+                        </span>
+                        <small>{formatDate(article.created_at)}</small>
+                      </div>
+
+                      <h3>{article.title || "Untitled article"}</h3>
+
+                      <p className="article-excerpt">
+                        {article.excerpt ||
+                          String(article.content || "")
+                            .replace(/<[^>]*>/g, " ")
+                            .slice(0, 180)}
+                      </p>
+
+                      <div className="article-meta">
+                        <span>{article.word_count || "—"} words</span>
+                        <span>{article.provider || "AI generated"}</span>
+                      </div>
+
+                      <div className="button-row">
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => setEditingArticle({ ...article })}
+                        >
+                          Edit
+                        </button>
+
+                        <button
+                          type="button"
+                          className="primary-button"
+                          disabled={publishingArticle || sites.length === 0}
+                          onClick={() => void publishArticle(article.id)}
+                        >
+                          Send to WordPress
+                        </button>
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* CONTENT SCHEDULER */}
+          {page === "Content Scheduler" && (
+            <>
+              <section className="panel">
+                <div className="panel-heading">
+                  <div>
+                    <h3>Create Content Schedule</h3>
+                    <p>Set a date and time for automatic article generation.</p>
+                  </div>
+                </div>
+
+                <form onSubmit={addSchedule}>
+                  <div className="form-grid">
+                    <div className="form-group full-width">
+                      <label>Article Topic *</label>
+                      <input
+                        value={scheduleTopic}
+                        onChange={(event) =>
+                          setScheduleTopic(event.target.value)
+                        }
+                        placeholder="Enter article topic"
+                        required
+                      />
+                    </div>
+
+                    <div className="form-group full-width">
+                      <label>Primary Keyword *</label>
+                      <input
+                        value={scheduleKeyword}
+                        onChange={(event) =>
+                          setScheduleKeyword(event.target.value)
+                        }
+                        placeholder="Enter primary keyword"
+                        required
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Schedule Date</label>
+                      <input
+                        type="date"
+                        min={new Date().toISOString().slice(0, 10)}
+                        value={scheduleDate}
+                        onChange={(event) =>
+                          setScheduleDate(event.target.value)
+                        }
+                        required
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Schedule Time</label>
+                      <input
+                        type="time"
+                        value={scheduleTime}
+                        onChange={(event) =>
+                          setScheduleTime(event.target.value)
+                        }
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-footer">
+                    <button
+                      type="submit"
+                      className="primary-button"
+                      disabled={scheduleLoading}
+                    >
+                      {scheduleLoading ? "Creating..." : "Create Schedule"}
+                    </button>
+                  </div>
+                </form>
+              </section>
+
+              <section className="panel">
+                <div className="panel-heading">
+                  <h3>Scheduled Tasks</h3>
+                  <span className="status-badge">
+                    {schedules.length} tasks
+                  </span>
+                </div>
+
+                {schedules.length === 0 ? (
+                  <p className="empty-state">{emptyMessage}</p>
+                ) : (
+                  <div className="simple-list">
+                    {schedules.map((item: any) => (
+                      <div className="list-row" key={item.id}>
+                        <div>
+                          <strong>{item.topic || "Scheduled article"}</strong>
+                          <small>
+                            {item.keyword || "No keyword"} ·{" "}
+                            {formatDate(
+                              item.scheduled_at || item.scheduledAt
+                            )}
+                          </small>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="danger-button"
+                          onClick={() => void deleteSchedule(item.id)}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </>
+          )}
+
+          {/* WEBSITES */}
+          {page === "Websites" && (
+            <>
+              <section className="panel">
+                <div className="panel-heading">
+                  <div>
+                    <h3>Connect WordPress Website</h3>
+                    <p>
+                      Use a WordPress Application Password, not your normal
+                      account password.
+                    </p>
+                  </div>
+                </div>
+
+                <form onSubmit={addWebsite}>
+                  <div className="form-grid">
+                    <div className="form-group">
+                      <label>Website Name *</label>
+                      <input
+                        value={siteName}
+                        onChange={(event) => setSiteName(event.target.value)}
+                        placeholder="My Website"
+                        required
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Website URL *</label>
+                      <input
+                        type="url"
+                        value={siteUrl}
+                        onChange={(event) => setSiteUrl(event.target.value)}
+                        placeholder="https://example.com"
+                        required
+                      />
+                    </div>
+
+                    <div className="form-group full-width">
+                      <label>WordPress Username:Application Password *</label>
+                      <input
+                        type="password"
+                        value={siteToken}
+                        onChange={(event) => setSiteToken(event.target.value)}
+                        placeholder="username:xxxx xxxx xxxx xxxx xxxx xxxx"
+                        required
+                      />
+                      <small className="muted">
+                        Generate this from WordPress Users → Profile →
+                        Application Passwords.
+                      </small>
+                    </div>
+                  </div>
+
+                  <div className="form-footer">
+                    <button
+                      type="submit"
+                      className="primary-button"
+                      disabled={siteLoading}
+                    >
+                      {siteLoading ? "Connecting..." : "+ Add Website"}
+                    </button>
+                  </div>
+                </form>
+              </section>
+
+              <section className="panel">
+                <div className="panel-heading">
+                  <h3>Connected Websites</h3>
+                  <span className="status-badge">{sites.length} websites</span>
+                </div>
+
+                {sites.length === 0 ? (
+                  <p className="empty-state">
+                    No WordPress websites connected yet.
+                  </p>
+                ) : (
+                  <div className="website-grid">
+                    {sites.map((site: any) => (
+                      <div className="website-card" key={site.id}>
+                        <div className="website-icon">W</div>
+
+                        <div className="website-info">
+                          <strong>{site.name}</strong>
+                          <small>{site.url}</small>
+                          <small>
+                            Connection:{" "}
+                            {siteStatus[String(site.id)] || "Not tested"}
+                          </small>
+                        </div>
+
+                        <div className="button-row">
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => void testWebsite(site.id)}
+                          >
+                            Test
+                          </button>
+
+                          <button
+                            type="button"
+                            className="danger-button"
+                            onClick={() => void deleteWebsite(site.id)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </>
+          )}
+
+          {/* AI PROVIDERS */}
+          {page === "AI Providers" && (
+            <>
+              <section className="panel">
+                <div className="panel-heading">
+                  <div>
+                    <h3>Built-in AI Providers</h3>
+                    <p>
+                      Your AI providers are configured in the application
+                      backend. No manual API-key entry is required here.
+                    </p>
+                  </div>
+
+                  <span className="connected">
+                    {PROVIDERS.length} providers available
+                  </span>
+                </div>
+              </section>
+
+              <div className="provider-grid">
+                {PROVIDERS.map((provider) => (
+                  <section
+                    className="panel provider-card"
+                    key={provider.id}
+                  >
                     <div className="panel-heading">
                       <div>
                         <h3>{provider.name}</h3>
                         <small>{provider.description}</small>
                       </div>
+
                       {renderProviderStatus(provider.id)}
                     </div>
 
@@ -918,370 +1333,44 @@ export default function App() {
                       {provider.id === "gemini"
                         ? "G"
                         : provider.id === "groq"
-                        ? "GQ"
-                        : "OR"}
+                          ? "GQ"
+                          : "OR"}
                     </div>
 
-                    <label>Model ID</label>
-                    <input
-                      value={providerModels[provider.id]}
-                      onChange={e =>
-                        setProviderModels(previous => ({
-                          ...previous,
-                          [provider.id]: e.target.value
-                        }))
-                      }
-                      placeholder={provider.defaultModel}
-                    />
+                    <div className="form-group">
+                      <label>Configured Model</label>
+                      <input value={provider.model} readOnly />
+                    </div>
 
-                    <label>API Key</label>
-                    <input
-                      type="password"
-                      value={providerKeys[provider.id] || ""}
-                      onChange={e =>
-                        setProviderKeys(previous => ({
-                          ...previous,
-                          [provider.id]: e.target.value
-                        }))
-                      }
-                      placeholder={
-                        configured
-                          ? "Saved key — enter a new key to replace"
-                          : "Enter your API key"
-                      }
-                    />
-
-                    {configured && (
-                      <p className="provider-saved">
-                        <span className="status-dot" />
-                        API key saved
-                      </p>
-                    )}
+                    <p className="provider-saved">
+                      <span className="status-dot online" />
+                      Built-in API configuration
+                    </p>
 
                     <button
+                      type="button"
+                      className="secondary-button"
                       disabled={providerLoading === provider.id}
-                      onClick={() => void saveProvider(provider.id)}
-                    >
-                      {providerLoading === provider.id
-                        ? "Saving..."
-                        : "Save API Configuration"}
-                    </button>
-
-                    <button
-                      className="refresh"
-                      disabled={!configured || providerLoading === provider.id}
                       onClick={() => void testProvider(provider.id)}
                     >
                       {providerLoading === provider.id
-                        ? "Testing..."
+                        ? "Testing Connection..."
                         : "Test Connection"}
                     </button>
                   </section>
-                );
-              })}
-            </div>
-          </>
-        )}
-
-        {/* WEBSITES */}
-
-        {page === "Websites" && (
-          <>
-            <section className="panel">
-              <h3>Connect WordPress Website</h3>
-              <p>
-                Add your WordPress website to manage and send articles
-                directly to its Drafts.
-              </p>
-
-              <form onSubmit={addWebsite} className="studio-form">
-                <label>Website Name</label>
-                <input
-                  value={siteName}
-                  onChange={e => setSiteName(e.target.value)}
-                  placeholder="My WordPress Website"
-                  required
-                />
-
-                <label>Website URL</label>
-                <input
-                  type="url"
-                  value={siteUrl}
-                  onChange={e => setSiteUrl(e.target.value)}
-                  placeholder="https://example.com"
-                  required
-                />
-
-                <label>WordPress Application Password</label>
-                <input
-                  type="password"
-                  value={siteToken}
-                  onChange={e => setSiteToken(e.target.value)}
-                  placeholder="Enter application password"
-                  required
-                />
-
-                <button type="submit">+ Connect Website</button>
-              </form>
-            </section>
-
-            <section className="panel">
-              <h3>Connected Websites</h3>
-
-              {sites.map(site => {
-                const status = siteStatus[site.id];
-
-                return (
-                  <div className="list-row" key={site.id}>
-                    <div className="list-info">
-                      <strong>{site.name}</strong>
-                      <small>{site.url}</small>
-                    </div>
-
-                    {status === "connected" ? (
-                      <span className="connected">Connected</span>
-                    ) : status === "testing" ? (
-                      <span className="disconnected">Testing...</span>
-                    ) : status === "disconnected" ? (
-                      <span className="disconnected">Disconnected</span>
-                    ) : (
-                      <span className="disconnected">Not tested</span>
-                    )}
-
-                    <button
-                      disabled={siteLoading === site.id}
-                      onClick={() => void testWebsite(site.id)}
-                    >
-                      Test
-                    </button>
-
-                    <button onClick={() => void deleteWebsite(site.id)}>
-                      Delete
-                    </button>
-                  </div>
-                );
-              })}
-
-              {sites.length === 0 && (
-                <div className="empty">
-                  <h4>No websites connected</h4>
-                  <p>Add a WordPress website to get started.</p>
-                </div>
-              )}
-            </section>
-          </>
-        )}
-
-        {/* ARTICLE GENERATOR */}
-
-        {page === "AI Article Generator" && (
-          <section className="panel">
-            <h3>AI Article Generator</h3>
-            <p>Create search-friendly content with your configured AI providers.</p>
-
-            <form onSubmit={generateArticle} className="studio-form">
-              <label>Article Topic</label>
-              <input
-                value={topic}
-                onChange={e => setTopic(e.target.value)}
-                placeholder="What should the article be about?"
-                required
-              />
-
-              <label>Primary SEO Keyword</label>
-              <input
-                value={keyword}
-                onChange={e => setKeyword(e.target.value)}
-                placeholder="Enter primary keyword"
-              />
-
-              <label>Target Word Count</label>
-              <input
-                type="number"
-                min="300"
-                max="10000"
-                value={wordCount}
-                onChange={e => setWordCount(e.target.value)}
-              />
-
-              <label>Writing Tone</label>
-              <select value={tone} onChange={e => setTone(e.target.value)}>
-                <option>Professional</option>
-                <option>Conversational</option>
-                <option>Friendly</option>
-                <option>Technical</option>
-                <option>Persuasive</option>
-              </select>
-
-              <label>Additional Instructions</label>
-              <textarea
-                rows={6}
-                value={instructions}
-                onChange={e => setInstructions(e.target.value)}
-                placeholder="Add any special content requirements..."
-              />
-
-              <button type="submit" disabled={loading}>
-                {loading ? "Generating Article..." : "Generate Article"}
-              </button>
-            </form>
-          </section>
-        )}
-
-        {/* ARTICLE LIBRARY */}
-
-        {page === "Article Library" && (
-          <section className="panel">
-            <h3>Article Library</h3>
-
-            {articles.map(article => (
-              <div className="list-row" key={article.id}>
-                <div className="list-info">
-                  <strong>{article.title}</strong>
-                  <small>{article.status || "Generated"}</small>
-                </div>
-
-                <button onClick={() => setEditingArticle({ ...article })}>
-                  Edit
-                </button>
-
-                <button onClick={() => void sendToWordPress(article)}>
-                  Send to Drafts
-                </button>
+                ))}
               </div>
-            ))}
+            </>
+          )}
+        </div>
 
-            {articles.length === 0 && (
-              <div className="empty">
-                <h4>Your library is empty</h4>
-                <p>Generate an article to see it here.</p>
-              </div>
-            )}
-
-            {editingArticle && (
-              <div className="editor">
-                <h3>Edit Article</h3>
-
-                <label>Article Title</label>
-                <input
-                  value={editingArticle.title}
-                  onChange={e =>
-                    setEditingArticle({
-                      ...editingArticle,
-                      title: e.target.value
-                    })
-                  }
-                />
-
-                <label>Article Content</label>
-                <textarea
-                  rows={18}
-                  value={editingArticle.content}
-                  onChange={e =>
-                    setEditingArticle({
-                      ...editingArticle,
-                      content: e.target.value
-                    })
-                  }
-                />
-
-                <label>Meta Description</label>
-                <textarea
-                  rows={3}
-                  value={editingArticle.meta_description || ""}
-                  onChange={e =>
-                    setEditingArticle({
-                      ...editingArticle,
-                      meta_description: e.target.value
-                    })
-                  }
-                />
-
-                <button onClick={() => void saveArticle(editingArticle)}>
-                  Save Changes
-                </button>
-
-                <button onClick={() => setEditingArticle(null)}>
-                  Cancel
-                </button>
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* CONTENT SCHEDULER */}
-
-        {page === "Content Scheduler" && (
-          <>
-            <section className="panel">
-              <h3>Content Scheduler</h3>
-              <p>Plan your upcoming AI article generation tasks.</p>
-
-              <form onSubmit={addSchedule} className="studio-form">
-                <label>Article Topic</label>
-                <input
-                  value={scheduleTopic}
-                  onChange={e => setScheduleTopic(e.target.value)}
-                  required
-                />
-
-                <label>Destination Website</label>
-                <select
-                  value={scheduleSite}
-                  onChange={e => setScheduleSite(e.target.value)}
-                  required
-                >
-                  <option value="">Select a website</option>
-                  {sites.map(site => (
-                    <option key={site.id} value={site.id}>
-                      {site.name}
-                    </option>
-                  ))}
-                </select>
-
-                <label>Schedule Date and Time</label>
-                <input
-                  type="datetime-local"
-                  value={scheduleDate}
-                  onChange={e => setScheduleDate(e.target.value)}
-                  required
-                />
-
-                <button type="submit">Create Schedule</button>
-              </form>
-            </section>
-
-            <section className="panel">
-              <h3>Upcoming Tasks</h3>
-
-              {schedules.map(item => (
-                <div className="list-row" key={item.id}>
-                  <div className="list-info">
-                    <strong>{item.topic || item.title}</strong>
-                    <small>{item.run_at}</small>
-                  </div>
-
-                  <button onClick={() => void deleteSchedule(item.id)}>
-                    Delete
-                  </button>
-                </div>
-              ))}
-
-              {schedules.length === 0 && (
-                <div className="empty">
-                  <h4>No scheduled tasks</h4>
-                  <p>Your upcoming tasks will appear here.</p>
-                </div>
-              )}
-            </section>
-          </>
-        )}
-
-        <footer>
-          AI Content Studio · Professional Windows Edition
+        <footer className="app-footer">
+          <span>© MadCraves</span>
+          <span>AI Content Studio · Version 1.0.0</span>
         </footer>
-
       </main>
     </div>
   );
 }
+
+export default App;
