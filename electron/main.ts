@@ -176,7 +176,7 @@ function getBuiltinProviders() {
     };
   });
   const custom = savedRows
-    .filter((row: any) => !builtinIds.includes(row.provider))
+    .filter((row: any) => !builtinIds.includes(row.provider) && !["image-openai", "image-imagen"].includes(row.provider))
     .map((row: any) => ({
       ...decryptApiKey(row),
       id: `custom:${row.id}`,
@@ -621,11 +621,16 @@ ipcMain.handle(
       throw new Error("Primary SEO keyword is required.");
     }
 
-    const providers = getBuiltinProviders();
+    const allProviders = getBuiltinProviders();
+    const providers = input.providerId
+      ? allProviders.filter((provider: any) => provider.id === input.providerId)
+      : allProviders.filter((provider: any) => provider.enabled !== false && provider.apiKey?.trim());
 
-    if (providers.length === 0) {
+    if (providers.length === 0 || !providers[0].apiKey?.trim()) {
       throw new Error(
-        "No built-in AI providers found. Check electron/config/api-keys.ts."
+        input.providerId
+          ? `Selected AI provider "${input.providerId}" is not configured. Save its API key in AI Providers first.`
+          : "No configured AI providers found. Save an API key in AI Providers first."
       );
     }
 
@@ -717,14 +722,121 @@ ipcMain.handle("schedule:delete", (_event, id: number) => {
 });
 
 // --------------------------------------------------
-// IMAGE GENERATION
+// IMAGE GENERATION PROVIDERS
 // --------------------------------------------------
 
-ipcMain.handle("images:generate", async () => {
-  requireValidLicense();
+const IMAGE_PROVIDER_DEFINITIONS: Record<string, { name: string; model: string }> = {
+  "image-openai": { name: "OpenAI Images", model: "gpt-image-1" },
+  "image-imagen": { name: "Google Imagen", model: "imagen-4.0-generate-001" },
+};
 
-  return {
-    ok: false,
-    message: "Image generation adapter is not implemented yet.",
-  };
+function getSavedImageProvider(providerId: string) {
+  const rows = db.getEnabledProviders()
+    .filter((row: any) => row.provider === providerId)
+    .sort((a: any, b: any) => Number(b.id) - Number(a.id));
+  if (!rows.length) throw new Error(`${IMAGE_PROVIDER_DEFINITIONS[providerId]?.name || providerId} API key is not configured.`);
+  const provider = decryptApiKey(rows[0]);
+  if (!provider.apiKey?.trim()) throw new Error(`${IMAGE_PROVIDER_DEFINITIONS[providerId]?.name || providerId} API key is empty.`);
+  return provider;
+}
+
+ipcMain.handle("images:providers:list", () => {
+  requireValidLicense();
+  return Object.entries(IMAGE_PROVIDER_DEFINITIONS).map(([id, definition]) => {
+    const row = db.getEnabledProviders()
+      .filter((item: any) => item.provider === id)
+      .sort((a: any, b: any) => Number(b.id) - Number(a.id))[0];
+    return { id, name: definition.name, model: definition.model, configured: Boolean(row?.api_key) };
+  });
+});
+
+ipcMain.handle("images:providers:save", (_event, input) => {
+  requireValidLicense();
+  const definition = IMAGE_PROVIDER_DEFINITIONS[input?.providerId];
+  if (!definition) throw new Error("Select a supported image provider.");
+  if (typeof input?.apiKey !== "string" || !input.apiKey.trim()) {
+    throw new Error("Enter the image-generation API key.");
+  }
+  const encryption = encryptApiKey(input.apiKey.trim());
+  const existing = db.getEnabledProviders()
+    .filter((row: any) => row.provider === input.providerId)
+    .sort((a: any, b: any) => Number(b.id) - Number(a.id))[0];
+  db.saveProvider({
+    id: existing?.id,
+    name: definition.name,
+    provider: input.providerId,
+    model: definition.model,
+    apiKey: encryption.apiKey,
+    encrypted: encryption.encrypted,
+    enabled: true,
+  });
+  return { ok: true };
+});
+
+ipcMain.handle("images:get", (_event, articleId: number) => {
+  requireValidLicense();
+  const article = db.getArticle(Number(articleId));
+  if (!article?.featured_image_path || !fs.existsSync(article.featured_image_path)) return null;
+  const extension = path.extname(article.featured_image_path).toLowerCase();
+  const mime = extension === ".jpg" || extension === ".jpeg" ? "image/jpeg" : "image/png";
+  return `data:${mime};base64,${fs.readFileSync(article.featured_image_path).toString("base64")}`;
+});
+
+ipcMain.handle("images:generate", async (_event, input) => {
+  requireValidLicense();
+  const providerId = String(input?.providerId || "");
+  const definition = IMAGE_PROVIDER_DEFINITIONS[providerId];
+  if (!definition) throw new Error("Choose OpenAI Images or Google Imagen.");
+  const article = db.getArticle(Number(input?.articleId));
+  if (!article) throw new Error("Generate or select an article before creating its featured image.");
+  const prompt = String(input?.prompt || article.title || "").trim();
+  if (prompt.length < 5) throw new Error("Enter a more descriptive image prompt.");
+
+  const provider = getSavedImageProvider(providerId);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120000);
+  let imageBase64 = "";
+  let mimeType = "image/png";
+
+  try {
+    let response: Response;
+    let data: any;
+    if (providerId === "image-openai") {
+      response = await fetch("https://api.openai.com/v1/images/generations", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${provider.apiKey}`, "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({ model: definition.model, prompt, size: "1536x1024", quality: "high", n: 1 }),
+      });
+      data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error?.message || `OpenAI Images returned HTTP ${response.status}.`);
+      imageBase64 = data?.data?.[0]?.b64_json || "";
+    } else {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${definition.model}:predict?key=${encodeURIComponent(provider.apiKey)}`;
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({ instances: [{ prompt }], parameters: { sampleCount: 1, aspectRatio: "16:9" } }),
+      });
+      data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error?.message || `Google Imagen returned HTTP ${response.status}.`);
+      imageBase64 = data?.predictions?.[0]?.bytesBase64Encoded || "";
+      mimeType = data?.predictions?.[0]?.mimeType || "image/png";
+    }
+    if (!imageBase64) throw new Error("The image provider returned no image data.");
+
+    const extension = mimeType.includes("jpeg") || mimeType.includes("jpg") ? ".jpg" : ".png";
+    const imageDir = path.join(app.getPath("userData"), "generated-images");
+    fs.mkdirSync(imageDir, { recursive: true });
+    const imagePath = path.join(imageDir, `article-${article.id}-${Date.now()}${extension}`);
+    fs.writeFileSync(imagePath, Buffer.from(imageBase64, "base64"));
+    db.setArticleImage(Number(article.id), imagePath);
+    return { ok: true, articleId: Number(article.id), imageDataUrl: `data:${mimeType};base64,${imageBase64}`, provider: providerId };
+  } catch (error: any) {
+    if (error?.name === "AbortError") throw new Error("Image generation timed out. Please try again.");
+    throw new Error(error?.message || "Image generation failed.");
+  } finally {
+    clearTimeout(timeout);
+  }
 });
