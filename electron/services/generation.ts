@@ -1,4 +1,5 @@
-import { API_KEYS } from "../config/api-keys";
+import { API_KEYS, AI_MODELS } from "../config/api-keys";
+
 interface GenerationInput {
   topic: string;
   keyword?: string;
@@ -26,6 +27,28 @@ interface ArticleResult {
   keywords: string[];
 }
 
+const MAX_RETRIES = 1;
+
+function getProviders(): AIProvider[] {
+  return [
+    {
+      name: "Gemini",
+      model: AI_MODELS.gemini,
+      apiKey: API_KEYS.gemini
+    },
+    {
+      name: "Groq",
+      model: AI_MODELS.groq,
+      apiKey: API_KEYS.groq
+    },
+    {
+      name: "OpenRouter",
+      model: AI_MODELS.openrouter,
+      apiKey: API_KEYS.openrouter
+    }
+  ].filter(provider => provider.apiKey?.trim().length > 0);
+}
+
 async function callAI(
   provider: AIProvider,
   prompt: string
@@ -38,7 +61,9 @@ async function callAI(
 
   let body: any;
 
-  if (provider.name.toLowerCase() === "gemini") {
+  const providerName = provider.name.toLowerCase();
+
+  if (providerName === "gemini") {
     endpoint =
       `https://generativelanguage.googleapis.com/v1beta/models/${provider.model}:generateContent?key=${provider.apiKey}`;
 
@@ -50,41 +75,58 @@ async function callAI(
       ],
       generationConfig: {
         temperature: 0.7,
-        maxOutputTokens: 8192
+        maxOutputTokens: 16384,
+        responseMimeType: "application/json"
       }
     };
-  } else if (provider.name.toLowerCase() === "groq") {
-    endpoint = "https://api.groq.com/openai/v1/chat/completions";
+
+  } else if (
+    providerName === "groq" ||
+    providerName === "openrouter"
+  ) {
+    endpoint =
+      providerName === "groq"
+        ? "https://api.groq.com/openai/v1/chat/completions"
+        : "https://openrouter.ai/api/v1/chat/completions";
 
     headers.Authorization = `Bearer ${provider.apiKey}`;
 
     body = {
       model: provider.model,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.7
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a professional SEO writer. Return only valid JSON. Do not use Markdown code fences."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      temperature: 0.7,
+      max_tokens: 16384,
+      response_format: {
+        type: "json_object"
+      }
     };
-  } else if (provider.name.toLowerCase() === "openrouter") {
-    endpoint = "https://openrouter.ai/api/v1/chat/completions";
 
-    headers.Authorization = `Bearer ${provider.apiKey}`;
-
-    body = {
-      model: provider.model,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.7
-    };
   } else {
-    throw new Error(`Unsupported AI provider: ${provider.name}`);
+    throw new Error(
+      `Unsupported AI provider: ${provider.name}`
+    );
   }
 
   const response = await fetch(endpoint, {
     method: "POST",
     headers,
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(180000)
   });
 
   if (!response.ok) {
     const errorText = await response.text();
+
     throw new Error(
       `${provider.name} API error (${response.status}): ${errorText}`
     );
@@ -92,13 +134,31 @@ async function callAI(
 
   const data: any = await response.json();
 
-  if (provider.name.toLowerCase() === "gemini") {
-    return data.candidates?.[0]?.content?.parts
-      ?.map((part: any) => part.text || "")
-      .join("") || "";
+  let output = "";
+
+  if (providerName === "gemini") {
+    output =
+      data.candidates?.[0]?.content?.parts
+        ?.map((part: any) => part.text || "")
+        .join("") || "";
+
+    if (!output) {
+      throw new Error(
+        "Gemini returned an empty response or no usable candidate."
+      );
+    }
+
+  } else {
+    output = data.choices?.[0]?.message?.content || "";
+
+    if (!output) {
+      throw new Error(
+        `${provider.name} returned an empty response.`
+      );
+    }
   }
 
-  return data.choices?.[0]?.message?.content || "";
+  return output;
 }
 
 function buildPrompt(input: GenerationInput): string {
@@ -107,38 +167,46 @@ You are a senior SEO strategist and professional content writer.
 
 Write a high-quality, original, human-readable SEO article.
 
-TOPIC: ${input.topic}
+TOPIC:
+${input.topic}
 
-PRIMARY KEYWORD: ${input.keyword || input.topic}
+PRIMARY KEYWORD:
+${input.keyword || input.topic}
 
 SECONDARY KEYWORDS:
 ${(input.secondaryKeywords || []).join(", ")}
 
-TARGET WORD COUNT: ${input.wordCount || 1500}
+TARGET WORD COUNT:
+${input.wordCount || 2000}
 
-WRITING TONE: ${input.tone || "Professional and conversational"}
+WRITING TONE:
+${input.tone || "Professional and conversational"}
 
 ADDITIONAL INSTRUCTIONS:
 ${input.instructions || "Use natural language and avoid keyword stuffing."}
 
 REQUIREMENTS:
-- Write a compelling SEO title.
-- Use one clear H1 heading.
-- Organize the article with relevant H2 and H3 headings.
-- Naturally include the primary and secondary keywords.
-- Write an engaging introduction.
-- Include useful examples and actionable information.
-- Add a conclusion.
-- Include 5 relevant FAQs.
-- Avoid repetitive or robotic language.
-- Do not use the word "Guide" in the title.
-- Do not invent statistics or unsupported claims.
+
+1. Write a compelling SEO title.
+2. Use one clear H1 heading.
+3. Organize the article with relevant H2 and H3 headings.
+4. Naturally include the primary and secondary keywords.
+5. Write an engaging introduction.
+6. Include useful examples and actionable information.
+7. Add a detailed conclusion.
+8. Include 5 relevant FAQs.
+9. Avoid repetitive or robotic language.
+10. Do not use the word "Guide" in the title.
+11. Do not invent statistics or unsupported claims.
+12. Write complete, useful content close to the requested word count.
+13. Return article content as valid HTML.
+14. Do not include Markdown code fences.
 
 Return ONLY valid JSON in this format:
 
 {
   "title": "Article title",
-  "content": "Complete article in HTML",
+  "content": "<h1>Article heading</h1><p>Complete article...</p>",
   "excerpt": "Short article summary",
   "slug": "article-url-slug",
   "metaTitle": "SEO meta title",
@@ -167,11 +235,24 @@ function parseArticle(
     );
   }
 
-  const parsed = JSON.parse(
-    cleaned.slice(start, end + 1)
-  );
+  let parsed: any;
 
-  if (!parsed.title || !parsed.content) {
+  try {
+    parsed = JSON.parse(
+      cleaned.slice(start, end + 1)
+    );
+  } catch {
+    throw new Error(
+      `${provider.name} returned malformed JSON.`
+    );
+  }
+
+  if (
+    typeof parsed.title !== "string" ||
+    !parsed.title.trim() ||
+    typeof parsed.content !== "string" ||
+    !parsed.content.trim()
+  ) {
     throw new Error(
       `${provider.name} returned incomplete article data.`
     );
@@ -192,64 +273,100 @@ function parseArticle(
   };
 }
 
-export async function runParallelGeneration(
-  input: GenerationInput,
-  providers: AIProvider[]
-): Promise<ArticleResult[]> {
+async function generateWithRetry(
+  provider: AIProvider,
+  prompt: string
+): Promise<ArticleResult> {
+  let lastError: any;
 
-  // Override database API keys with hardcoded API keys
-  providers = providers.map(provider => {
-    const name = provider.name.toLowerCase();
-
-    const hardcodedKey =
-      API_KEYS[name as keyof typeof API_KEYS];
-
-    return {
-      ...provider,
-      apiKey: hardcodedKey || provider.apiKey
-    };
-  });
-
-  if (!providers.length) {
-    throw new Error(
-      "Please enable at least one AI provider."
-    );
-  }
-  const prompt = buildPrompt(input);
-
-  const prompt = buildPrompt(input);
-
-  const tasks = providers.map(async (provider) => {
+  for (
+    let attempt = 0;
+    attempt <= MAX_RETRIES;
+    attempt++
+  ) {
     try {
       const raw = await callAI(provider, prompt);
       return parseArticle(raw, provider);
+
     } catch (error: any) {
-      throw new Error(
-        `${provider.name}: ${error.message}`
+      lastError = error;
+
+      if (attempt < MAX_RETRIES) {
+        console.warn(
+          `${provider.name} failed. Retrying...`,
+          error.message
+        );
+      }
+    }
+  }
+
+  throw new Error(
+    `${provider.name} failed after ${MAX_RETRIES + 1} attempts: ${lastError?.message}`
+  );
+}
+
+export async function runParallelGeneration(
+  input: GenerationInput,
+  _providers: AIProvider[]
+): Promise<ArticleResult[]> {
+
+  const providers = getProviders();
+
+  if (!providers.length) {
+    throw new Error(
+      "No hardcoded AI API keys configured. Check electron/config/api-keys.ts."
+    );
+  }
+
+  const prompt = buildPrompt(input);
+
+  // Run all configured providers simultaneously.
+  const results = await Promise.allSettled(
+    providers.map(provider =>
+      generateWithRetry(provider, prompt)
+    )
+  );
+
+  const successful: ArticleResult[] = [];
+  const failedProviders: AIProvider[] = [];
+
+  results.forEach((result, index) => {
+    if (result.status === "fulfilled") {
+      successful.push(result.value);
+    } else {
+      failedProviders.push(providers[index]);
+
+      console.error(
+        `${providers[index].name} failed:`,
+        result.reason?.message
       );
     }
   });
 
-  const results = await Promise.allSettled(tasks);
-
-  const successful = results
-    .filter(
-      (result): result is PromiseFulfilledResult<ArticleResult> =>
-        result.status === "fulfilled"
-    )
-    .map(result => result.value);
-
-  if (!successful.length) {
-    const errors = results
-      .filter(result => result.status === "rejected")
-      .map(result =>
-        (result as PromiseRejectedResult).reason?.message
-      );
-
-    throw new Error(
-      `All AI providers failed: ${errors.join(" | ")}`
-    );
+  // Keep every successful article.
+  if (successful.length > 0) {
+    return successful;
   }
 
-  return successful;
+  // All simultaneous attempts failed.
+  // Try each provider again as a backup.
+  const backupErrors: string[] = [];
+
+  for (const provider of failedProviders) {
+    try {
+      const article = await generateWithRetry(
+        provider,
+        prompt
+      );
+
+      return [article];
+
+    } catch (error: any) {
+      backupErrors.push(error.message);
+    }
+  }
+
+  throw new Error(
+    `All AI providers failed. Backup errors: ${backupErrors.join(" | ")}`
+  );
 }
