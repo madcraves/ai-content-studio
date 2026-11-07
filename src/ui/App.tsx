@@ -584,7 +584,7 @@ function App() {
       if (!result?.ok) throw new Error(result?.message || "Image search could not be completed.");
       setImageResults(Array.isArray(result.results) ? result.results : []);
       setImageSearchQueries(Array.isArray(result.queries) ? result.queries : []);
-      if (!result.results?.length) notify("No suitable Wikimedia Commons images were found. Try a more descriptive article title.", true);
+      if (!result.results?.length) notify("No suitable openly licensed images were found. Try a more descriptive article title.", true);
       else notify(`Found ${result.results.length} relevant images. Choose one featured image and four in-article images.`);
     } catch (err: any) {
       notify(err?.message || "Article image search failed.", true);
@@ -1511,7 +1511,7 @@ function App() {
               )}
               <section className="panel image-studio-section" id="image-generation-section">
                 <div className="panel-heading">
-                  <div><span className="eyebrow-light">VISUAL CONTENT WORKSPACE</span><h3>AI Article Image Research</h3><p>Find real, topic-matched images from Wikimedia Commons. No image-generation API or extra API key required.</p></div>
+                  <div><span className="eyebrow-light">VISUAL CONTENT WORKSPACE</span><h3>AI Article Image Research</h3><p>Find topic-matched images from Openverse and Wikimedia Commons. Free sources only; no API key required.</p></div>
                   <span className="connected">Featured + 4 in-article</span>
                 </div>
                 <div className="image-studio-layout image-search-layout">
@@ -1535,7 +1535,7 @@ function App() {
                       {imageSearchQueries.length > 0 && <small>Search topics: {imageSearchQueries.join(" · ")}</small>}
                     </div>
                     <button type="button" className="primary-button" disabled={!generatedArticle?.id || imageLoading} onClick={() => void searchArticleImages()}>
-                      {imageLoading ? <><span className="button-spinner" /> Searching Wikimedia...</> : "⌕ Search Article Images"}
+                      {imageLoading ? <><span className="button-spinner" /> Searching free image sources...</> : "⌕ Search Article Images"}
                     </button>
                     <div className="image-selection-status">
                       <span>Featured image: <b>{featuredImage ? "Selected" : "Not selected"}</b></span>
