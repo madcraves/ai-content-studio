@@ -132,42 +132,40 @@ function decryptApiKey(provider: any): any {
 // --------------------------------------------------
 
 function getBuiltinProviders() {
-  const builtins = [
-    {
-      id: "gemini",
-      name: "Google Gemini",
-      provider: "gemini",
-      model: AI_MODELS.gemini,
-      apiKey: API_KEYS.gemini,
+  const savedRows = db.getEnabledProviders();
+  const builtinIds = ["gemini", "groq", "openrouter"];
+  const builtins = builtinIds.map((id) => {
+    const savedRow = savedRows
+      .filter((row: any) => row.provider === id)
+      .sort((a: any, b: any) => Number(b.id) - Number(a.id))[0];
+    const saved = savedRow ? decryptApiKey(savedRow) : null;
+    const defaults: Record<string, any> = {
+      gemini: { name: "Google Gemini", model: AI_MODELS.gemini, apiKey: API_KEYS.gemini },
+      groq: { name: "Groq", model: AI_MODELS.groq, apiKey: API_KEYS.groq },
+      openrouter: { name: "OpenRouter", model: AI_MODELS.openrouter, apiKey: API_KEYS.openrouter },
+    };
+    return {
+      id,
+      name: defaults[id].name,
+      provider: id,
+      model: saved?.model || defaults[id].model,
+      apiKey: saved?.apiKey || defaults[id].apiKey,
       enabled: true,
-    },
-    {
-      id: "groq",
-      name: "Groq",
-      provider: "groq",
-      model: AI_MODELS.groq,
-      apiKey: API_KEYS.groq,
-      enabled: true,
-    },
-    {
-      id: "openrouter",
-      name: "OpenRouter",
-      provider: "openrouter",
-      model: AI_MODELS.openrouter,
-      apiKey: API_KEYS.openrouter,
-      enabled: true,
-    },
-  ].filter((provider) => Boolean(provider.apiKey?.trim()));
-
-  const custom = db.getEnabledProviders().map((row: any) => ({
-    ...decryptApiKey(row),
-    id: `custom:${row.id}`,
-    name: row.name,
-    provider: row.provider,
-    model: row.model,
-    baseUrl: row.base_url || "",
-    enabled: Boolean(row.enabled),
-  }));
+      configured: Boolean((saved?.apiKey || defaults[id].apiKey || "").trim()),
+    };
+  });
+  const custom = savedRows
+    .filter((row: any) => !builtinIds.includes(row.provider))
+    .map((row: any) => ({
+      ...decryptApiKey(row),
+      id: `custom:${row.id}`,
+      name: row.name,
+      provider: row.provider,
+      model: row.model,
+      baseUrl: row.base_url || "",
+      enabled: Boolean(row.enabled),
+      configured: Boolean(row.api_key),
+    }));
   return [...builtins, ...custom];
 }
 
@@ -528,8 +526,14 @@ ipcMain.handle("providers:save", (_event, provider) => {
 
   const encryption = encryptApiKey(apiKey);
 
+  const builtinIds = ["gemini", "groq", "openrouter"];
+  const existingBuiltin = builtinIds.includes(provider.provider)
+    ? db.getEnabledProviders().find((row: any) => row.provider === provider.provider)
+    : null;
+
   db.saveProvider({
     ...provider,
+    id: existingBuiltin?.id,
     apiKey: encryption.apiKey,
     encrypted: encryption.encrypted,
     base_url: provider.baseUrl || provider.base_url || null,
@@ -548,6 +552,7 @@ ipcMain.handle("providers:list", () => {
     model: provider.model,
     baseUrl: provider.baseUrl || "",
     enabled: provider.enabled !== false,
+    configured: Boolean(provider.apiKey?.trim()),
     builtIn: !String(provider.id).startsWith("custom:"),
   }));
 });
