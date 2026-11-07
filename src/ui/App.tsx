@@ -60,14 +60,25 @@ function formatDate(value: any) {
   return date.toLocaleString();
 }
 
+function formatLicenseCountdown(milliseconds: number) {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${days}d ${hours}h ${minutes}m ${seconds}s`;
+}
+
 function App() {
   const [page, setPage] = useState<Page>("Dashboard");
+  const [licenseClock, setLicenseClock] = useState(Date.now());
 
   const [licenseChecking, setLicenseChecking] = useState(true);
   const [licenseStatus, setLicenseStatus] = useState<any>(null);
   const [machineId, setMachineId] = useState("");
   const [activationCode, setActivationCode] = useState("");
   const [licenseLoading, setLicenseLoading] = useState(false);
+  const licenseRemainingMs = licenseStatus?.expiresAt ? Math.max(0, Date.parse(licenseStatus.expiresAt) - licenseClock) : null;
 
   const [sites, setSites] = useState<any[]>([]);
   const [providers, setProviders] = useState<any[]>([]);
@@ -225,6 +236,11 @@ function App() {
     return () => {
       active = false;
     };
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setLicenseClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -891,6 +907,16 @@ function App() {
             </button>
           </div>
         </header>
+
+        <section className="license-summary-panel" aria-label="License details">
+          <div className="license-summary-heading">
+            <span className="license-summary-icon">✓</span>
+            <div><strong>License Details</strong><small>{licenseStatus?.licensee || "Activated user"} · {licenseStatus?.isLifetime ? "Lifetime license" : "Time-limited license"}</small></div>
+          </div>
+          <div className="license-summary-item"><span>Issued</span><strong>{formatDate(licenseStatus?.issuedAt)}</strong></div>
+          <div className="license-summary-item"><span>Expires</span><strong>{licenseStatus?.isLifetime ? "Never (Lifetime)" : formatDate(licenseStatus?.expiresAt)}</strong></div>
+          <div className="license-summary-item license-countdown"><span>Time remaining</span><strong>{licenseStatus?.isLifetime ? "Unlimited" : formatLicenseCountdown(licenseRemainingMs || 0)}</strong></div>
+        </section>
 
         {updateInfo.status === "downloading" && (
           <section className="update-progress-panel" aria-live="polite">
