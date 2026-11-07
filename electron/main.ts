@@ -44,7 +44,7 @@ if (isPortableBuild && portableBase) {
 function requireValidLicense(): void {
   const status = getLicenseStatus(licenseFile());
 
-  if (!status.valid) {
+  if (!status.activated) {
     throw new Error(
       status.message || "A valid activation license is required."
     );
