@@ -119,7 +119,8 @@ function App() {
 
   const [siteName, setSiteName] = useState("");
   const [siteUrl, setSiteUrl] = useState("");
-  const [siteToken, setSiteToken] = useState("");
+  const [siteUsername, setSiteUsername] = useState("");
+  const [siteApplicationPassword, setSiteApplicationPassword] = useState("");
   const [siteLoading, setSiteLoading] = useState(false);
   const [siteStatus, setSiteStatus] = useState<Record<string, string>>({});
 
@@ -386,7 +387,7 @@ function App() {
     event?.preventDefault();
     clearNotifications();
 
-    if (!siteName.trim() || !siteUrl.trim() || !siteToken.trim()) {
+    if (!siteName.trim() || !siteUrl.trim() || !siteUsername.trim() || !siteApplicationPassword.trim()) {
       notify("Please complete all website fields.", true);
       return;
     }
@@ -397,12 +398,13 @@ function App() {
       await studio.addSite({
         name: siteName.trim(),
         url: siteUrl.trim(),
-        token: siteToken.trim(),
+        token: `${siteUsername.trim()}:${siteApplicationPassword.trim().replace(/\\s+/g, "")}`,
       });
 
       setSiteName("");
       setSiteUrl("");
-      setSiteToken("");
+      setSiteUsername("");
+      setSiteApplicationPassword("");
 
       await loadData(true);
       notify("Website added successfully.");
@@ -1070,8 +1072,12 @@ function App() {
                   </div>
 
                   <div className="overview-item">
-                    <span>AI providers</span>
-                    <strong>{providers.length} available</strong>
+                    <span>AI providers active</span>
+                    <strong>{providers.filter((item: any) => item.enabled && item.configured).length} active</strong>
+                  </div>
+                  <div className="overview-item">
+                    <span>AI providers connected</span>
+                    <strong>{providers.filter((item: any) => item.enabled && item.configured && providerStatus[item.id] === "Connected").length} connected</strong>
                   </div>
 
                   <div className="overview-item">
@@ -1557,18 +1563,29 @@ function App() {
                       />
                     </div>
 
-                    <div className="form-group full-width">
-                      <label>WordPress Username:Application Password *</label>
+                    <div className="form-group">
+                      <label>WordPress Username *</label>
+                      <input
+                        type="text"
+                        value={siteUsername}
+                        onChange={(event) => setSiteUsername(event.target.value)}
+                        placeholder="Your WordPress username"
+                        autoComplete="username"
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Application Password *</label>
                       <input
                         type="password"
-                        value={siteToken}
-                        onChange={(event) => setSiteToken(event.target.value)}
-                        placeholder="username:xxxx xxxx xxxx xxxx xxxx xxxx"
+                        value={siteApplicationPassword}
+                        onChange={(event) => setSiteApplicationPassword(event.target.value)}
+                        placeholder="xxxx xxxx xxxx xxxx xxxx xxxx"
+                        autoComplete="new-password"
                         required
                       />
                       <small className="muted">
-                        Generate this from WordPress Users → Profile →
-                        Application Passwords.
+                        Create it in WordPress Users → Profile → Application Passwords. Do not use your normal login password.
                       </small>
                     </div>
                   </div>
