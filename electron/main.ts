@@ -608,6 +608,20 @@ ipcMain.handle("articles:list", () => {
   return db.listArticles();
 });
 
+ipcMain.handle("articles:delete", (_event, articleId: number) => {
+  requireValidLicense();
+  const id = Number(articleId);
+  if (!Number.isInteger(id) || id <= 0) throw new Error("A valid article ID is required.");
+  const article = db.getArticle(id);
+  if (!article) throw new Error("Article not found.");
+  const result = db.deleteArticle(id);
+  if (article.featured_image_path && fs.existsSync(article.featured_image_path)) {
+    try { fs.unlinkSync(article.featured_image_path); }
+    catch (error) { console.warn("Could not remove the article's featured image:", error); }
+  }
+  return { ok: true, deleted: result.changes > 0 };
+});
+
 ipcMain.handle(
   "articles:generate",
   async (_event, input) => {
