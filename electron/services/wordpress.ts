@@ -15,6 +15,7 @@ type Article = {
   meta_description?: string;
   focus_keyword?: string;
   keywords?: string;
+  featured_image_path?: string;
 };
 
 function getBaseUrl(url: string): string {
@@ -160,12 +161,76 @@ export async function publishDraft(site: WordPressSite, article: Article) {
     throw new Error(explainWordPressError(authResponse.status, authData));
   }
 
+  // Upload article images to the destination site's Media Library. Only Wikimedia Commons
+  // URLs are accepted here; this prevents arbitrary remote URL fetching from article HTML.
+  const allowedImageHost = (value: string) => {
+    try { const host = new URL(value).hostname.toLowerCase(); return host === "upload.wikimedia.org"; }
+    catch { return false; }
+  };
+  const uploadRemoteImage = async (imageUrl: string, altText: string) => {
+    if (!allowedImageHost(imageUrl)) throw new Error("An article image has an unsupported source URL.");
+    const imageResponse = await fetch(imageUrl, { signal: AbortSignal.timeout(30000) });
+    if (!imageResponse.ok) throw new Error(`Unable to download an article image (HTTP ${imageResponse.status}).`);
+    const mime = imageResponse.headers.get("content-type")?.split(";")[0] || "image/jpeg";
+    if (!/^image\/(jpeg|png|webp|gif)$/i.test(mime)) throw new Error("An article image has an unsupported file type.");
+    const bytes = Buffer.from(await imageResponse.arrayBuffer());
+    if (!bytes.length || bytes.length > 15 * 1024 * 1024) throw new Error("An article image is empty or larger than 15 MB.");
+    const extension = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : mime.includes("gif") ? "gif" : "jpg";
+    const filename = `madcraves-article-image-${Date.now()}.${extension}`;
+    const mediaResponse = await fetch(`${base}/wp-json/wp/v2/media`, {
+      method: "POST",
+      headers: {
+        Authorization: authorization,
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Type": mime,
+        "Content-Length": String(bytes.length),
+        "Accept": "application/json",
+      },
+      body: bytes,
+      signal: AbortSignal.timeout(45000),
+    });
+    const media = await readWordPressResponse(mediaResponse);
+    if (!mediaResponse.ok || !media?.id) throw new Error(explainWordPressError(mediaResponse.status, media));
+    // Set accessible alt text on the uploaded attachment.
+    await fetch(`${base}/wp-json/wp/v2/media/${media.id}`, {
+      method: "POST",
+      headers: { Authorization: authorization, "Content-Type": "application/json" },
+      body: JSON.stringify({ alt_text: altText }),
+      signal: AbortSignal.timeout(20000),
+    });
+    return { id: Number(media.id), url: String(media.source_url || imageUrl) };
+  };
+
+  let content = String(article.content || "");
+  let featuredMediaId: number | undefined;
+  const featuredMarker = content.match(/<!--\s*MADCRAVES_FEATURED_IMAGE:([\s\S]*?)\s*-->/i);
+  if (featuredMarker?.[1]) {
+    try {
+      const featured = JSON.parse(decodeURIComponent(featuredMarker[1]));
+      const uploaded = await uploadRemoteImage(String(featured.url || ""), String(featured.alt || article.title));
+      featuredMediaId = uploaded.id;
+    } catch (error: any) {
+      throw new Error(`Featured image upload failed: ${error?.message || String(error)}`);
+    }
+    content = content.replace(featuredMarker[0], "");
+  }
+
+  const inlineImages = [...content.matchAll(/<img\b([^>]*?)src=["'](https?:\/\/[^"']+)["']([^>]*)>/gi)];
+  for (const match of inlineImages) {
+    const originalUrl = match[2];
+    if (!allowedImageHost(originalUrl)) continue;
+    const alt = match[1].match(/alt=["']([^"']*)["']/i)?.[1] || article.title;
+    const uploaded = await uploadRemoteImage(originalUrl, alt);
+    content = content.replace(originalUrl, uploaded.url);
+  }
+
   const postPayload: Record<string, any> = {
     title: article.title.trim(),
-    content: article.content,
+    content,
     excerpt: article.excerpt || "",
     status: "draft"
   };
+  if (featuredMediaId) postPayload.featured_media = featuredMediaId;
 
   if (article.slug?.trim()) {
     postPayload.slug = article.slug.trim();
