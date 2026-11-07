@@ -13,7 +13,9 @@ declare global {
     name: string;
     provider: string;
     model: string;
+    baseUrl?: string;
     enabled?: boolean;
+    builtIn?: boolean;
   }
 
   interface Article {
@@ -67,6 +69,8 @@ declare global {
     saveProvider: (provider: Partial<AIProvider> & {
       apiKey?: string;
       api_key?: string;
+      baseUrl?: string;
+      base_url?: string;
     }) => Promise<any>;
 
     listProviders: () => Promise<AIProvider[]>;
