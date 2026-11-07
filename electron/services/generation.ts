@@ -657,7 +657,7 @@ export async function runMultiAgentGeneration(input: GenerationInput, providers:
     { role: "Fact-Check & Final QA Agent", task: "Review factual consistency, qualify unsupported claims, check structure and produce the final publish-ready article. Never fabricate citations." },
   ];
   while (stages.length < active.length) {
-    stages.push({ role: `Independent Review Agent \${stages.length + 1}`, task: "Independently review the current article for missing topical coverage, weak explanations, factual caution, SEO opportunities and human readability. Improve the article substantially without adding unsupported claims." });
+    stages.push({ role: `Independent Review Agent ${stages.length + 1}`, task: "Independently review the current article for missing topical coverage, weak explanations, factual caution, SEO opportunities and human readability. Improve the article substantially without adding unsupported claims." });
   }
   let previous: GeneratedArticle | null = null;
   const unavailable = new Set<string>();
@@ -667,8 +667,8 @@ export async function runMultiAgentGeneration(input: GenerationInput, providers:
     const agentInput: GenerationInput = {
       ...input,
       instructions: [input.instructions || "",
-        `AGENT ROLE: \${stage.role}. \${stage.task}`,
-        previous ? `PREVIOUS AGENT DRAFT — improve it, do not summarize:\\nTitle: \${previous.title}\\nExcerpt: \${previous.excerpt}\\nHTML: \${previous.content}\\nKeywords: \${previous.keywords.join(", ")}` : "Start with a research-led outline and complete first draft.",
+        `AGENT ROLE: ${stage.role}. ${stage.task}`,
+        previous ? `PREVIOUS AGENT DRAFT — improve it, do not summarize:\\nTitle: ${previous.title}\\nExcerpt: ${previous.excerpt}\\nHTML: ${previous.content}\\nKeywords: ${previous.keywords.join(", ")}` : "Start with a research-led outline and complete first draft.",
         "Return the required JSON article object with valid WordPress HTML."
       ].filter(Boolean).join("\\n\\n"),
     };
