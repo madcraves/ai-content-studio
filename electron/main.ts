@@ -779,7 +779,7 @@ ipcMain.handle("images:search", async (_event, input) => {
   if (!article) throw new Error("Article not found.");
 
   const html = String(article.content || "");
-  const headings = [...html.matchAll(/<h[2-3][^>]*>([\\s\\S]*?)<\\/h[2-3]>/gi)]
+  const headings = [...html.matchAll(/<h[2-3][^>]*>([\s\S]*?)<\/h[2-3]>/gi)]
     .map((match) => cleanImageSearchText(match[1]))
     .filter((value) => value.length > 8);
   const title = cleanImageSearchText(article.title);
@@ -859,7 +859,7 @@ ipcMain.handle("images:search", async (_event, input) => {
     return Object.values(data?.query?.pages || {}).map((page: any) => {
       const info = page?.imageinfo?.[0];
       const meta = info?.extmetadata || {};
-      const value = (key: string) => String(meta?.[key]?.value || "").replace(/<[^>]*>/g, " ").replace(/\\s+/g, " ").trim();
+      const value = (key: string) => String(meta?.[key]?.value || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
       return {
         id: `commons-${page.pageid}`,
         title: String(page.title || "").replace(/^File:/, ""),
