@@ -161,15 +161,24 @@ export async function publishDraft(site: WordPressSite, article: Article) {
     throw new Error(explainWordPressError(authResponse.status, authData));
   }
 
-  // Upload article images to the destination site's Media Library. Only Wikimedia Commons
-  // URLs are accepted here; this prevents arbitrary remote URL fetching from article HTML.
+  // Openverse and Wikimedia Commons return HTTPS image URLs from public image hosts.
+  // Reject local/private network targets to prevent server-side request forgery.
   const allowedImageHost = (value: string) => {
-    try { const host = new URL(value).hostname.toLowerCase(); return host === "upload.wikimedia.org"; }
-    catch { return false; }
+    try {
+      const parsed = new URL(value);
+      const host = parsed.hostname.toLowerCase();
+      if (parsed.protocol !== "https:" || !host || host === "localhost"
+        || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")
+        || /^127\\./.test(host) || /^10\\./.test(host) || /^192\\.168\\./.test(host)
+        || /^169\\.254\\./.test(host) || /^172\\.(1[6-9]|2\\d|3[01])\\./.test(host)
+        || host === "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80:")) return false;
+      return true;
+    } catch { return false; }
   };
   const uploadRemoteImage = async (imageUrl: string, altText: string, attribution = "") => {
     if (!allowedImageHost(imageUrl)) throw new Error("An article image has an unsupported source URL.");
-    const imageResponse = await fetch(imageUrl, { signal: AbortSignal.timeout(30000) });
+    const imageResponse = await fetch(imageUrl, { signal: AbortSignal.timeout(30000), redirect: "follow" });
+    if (!allowedImageHost(imageResponse.url || imageUrl)) throw new Error("The image source redirected to an unsupported address.");
     if (!imageResponse.ok) throw new Error(`Unable to download an article image (HTTP ${imageResponse.status}).`);
     const mime = imageResponse.headers.get("content-type")?.split(";")[0] || "image/jpeg";
     if (!/^image\/(jpeg|png|webp|gif)$/i.test(mime)) throw new Error("An article image has an unsupported file type.");
