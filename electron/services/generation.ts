@@ -196,11 +196,26 @@ export async function runParallelGeneration(
   input: GenerationInput,
   providers: AIProvider[]
 ): Promise<ArticleResult[]> {
+
+  // Override database API keys with hardcoded API keys
+  providers = providers.map(provider => {
+    const name = provider.name.toLowerCase();
+
+    const hardcodedKey =
+      API_KEYS[name as keyof typeof API_KEYS];
+
+    return {
+      ...provider,
+      apiKey: hardcodedKey || provider.apiKey
+    };
+  });
+
   if (!providers.length) {
     throw new Error(
       "Please enable at least one AI provider."
     );
   }
+  const prompt = buildPrompt(input);
 
   const prompt = buildPrompt(input);
 
