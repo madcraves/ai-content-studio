@@ -635,13 +635,13 @@ function App() {
         license: featuredImage.license,
         attribution: featuredImage.attribution,
       };
-      let content = String(article.content || "").replace(/<!--\s*MADCRAVES_FEATURED_IMAGE:[\s\S]*?-->/i, "");
+      let content = String(article.content || "").replace(/<!--\s*MADCRAVES_FEATURED_IMAGE:[\s\S]*?-->/i, "").replace(/<figure\b[^>]*data-madcraves-image=["\']true["\'][\s\S]*?<\/figure>/gi, "");
       content = `<!-- MADCRAVES_FEATURED_IMAGE:${encodeURIComponent(JSON.stringify(featuredMeta))} -->\n` + content;
       const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       for (const image of inlineImages) {
         const alt = escapeImageHtml(image.description || image.title || article.title);
         const caption = `Image: ${escapeImageHtml(image.artist || "Unknown creator")} · ${escapeImageHtml(image.license || "License not specified")} · <a href="${escapeImageHtml(image.sourceUrl)}" target="_blank" rel="noopener">Source</a>`;
-        const figure = `<figure class="wp-block-image"><img src="${escapeImageHtml(image.imageUrl)}" alt="${alt}" loading="lazy" /><figcaption class="wp-element-caption">${caption}</figcaption></figure>`;
+        const figure = `<figure class="wp-block-image" data-madcraves-image="true"><img src="${escapeImageHtml(image.imageUrl)}" alt="${alt}" loading="lazy" /><figcaption class="wp-element-caption">${caption}</figcaption></figure>`;
         const heading = String(image.section || "").trim();
         let inserted = false;
         if (heading && heading !== "Featured / overall topic") {
