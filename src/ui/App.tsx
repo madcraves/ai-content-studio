@@ -147,6 +147,8 @@ function App() {
   const [scheduleLoading, setScheduleLoading] = useState(false);
 
   const [publishingArticle, setPublishingArticle] = useState(false);
+  const [publishingTargetArticle, setPublishingTargetArticle] = useState<any>(null);
+  const [publishingSiteId, setPublishingSiteId] = useState("");
 
   const notify = useCallback((text: string, isError = false) => {
     setMessage(isError ? "" : text);
@@ -679,50 +681,32 @@ function App() {
     }
   }
 
-  async function publishArticle(articleId: number | string) {
+  async function publishArticle(article: any) {
     clearNotifications();
-
     if (!sites.length) {
       notify("Please add a WordPress website first.", true);
       return;
     }
+    setPublishingTargetArticle(article);
+    setPublishingSiteId(sites.length === 1 ? String(sites[0].id) : "");
+  }
 
-    const options = sites
-      .map((site: any) => `${site.id}: ${site.name} (${site.url})`)
-      .join("\n");
-
-    const selected = window.prompt(
-      `Enter the website ID where you want to save this article as a WordPress draft:\n\n${options}`
-    );
-
-    if (!selected) return;
-
-    const site = sites.find(
-      (item: any) => String(item.id) === selected.trim()
-    );
-
+  async function confirmPublishArticle() {
+    if (!publishingTargetArticle?.id) return;
+    const site = sites.find((item: any) => String(item.id) === publishingSiteId);
     if (!site) {
-      notify("Invalid website ID.", true);
+      notify("Please select a connected WordPress website.", true);
       return;
     }
-
+    clearNotifications();
     setPublishingArticle(true);
-
     try {
-      const result = await studio.publish({
-        articleId,
-        siteId: site.id,
-      });
-
-      if (result?.ok === false || result?.success === false) {
-        throw new Error(result?.message || "WordPress publishing failed.");
-      }
-
+      const result = await studio.publish({ articleId: Number(publishingTargetArticle.id), siteId: Number(site.id) });
+      if (result?.ok === false || result?.success === false) throw new Error(result?.message || "WordPress publishing failed.");
       await loadData(true);
-
-      notify(
-        result?.message || "Article successfully sent to WordPress drafts."
-      );
+      setPublishingTargetArticle(null);
+      setPublishingSiteId("");
+      notify(result?.message || `Article successfully sent to WordPress draft on ${site.name}.`);
     } catch (err: any) {
       notify(err?.message || "Unable to send article to WordPress.", true);
     } finally {
@@ -1368,7 +1352,7 @@ function App() {
                           type="button"
                           className="primary-button"
                           disabled={publishingArticle || sites.length === 0}
-                          onClick={() => void publishArticle(article.id)}
+                          onClick={() => void publishArticle(article)}
                         >
                           Send to WordPress
                         </button>
@@ -1762,6 +1746,29 @@ function App() {
             </>
           )}
         </div>
+
+        {publishingTargetArticle && (
+          <div className="article-preview-modal wordpress-publish-modal" role="dialog" aria-modal="true" aria-label="Choose WordPress website" onMouseDown={(event) => { if (event.target === event.currentTarget && !publishingArticle) { setPublishingTargetArticle(null); setPublishingSiteId(""); } }}>
+            <section className="wordpress-publish-card">
+              <div className="panel-heading">
+                <div><span className="eyebrow-light">PUBLISHING DESTINATION</span><h3>Send article to WordPress</h3><p>Choose which connected website should receive this article as a WordPress draft.</p></div>
+                <button type="button" className="secondary-button" disabled={publishingArticle} onClick={() => { setPublishingTargetArticle(null); setPublishingSiteId(""); }}>Close</button>
+              </div>
+              <div className="publish-article-summary"><strong>{publishingTargetArticle.title || "Untitled article"}</strong><small>Article Library · WordPress Draft</small></div>
+              <div className="wordpress-site-choice-list">
+                {sites.map((site: any) => <label key={site.id} className={`wordpress-site-choice ${publishingSiteId === String(site.id) ? "selected" : ""}`}>
+                  <input type="radio" name="wordpress-publish-site" value={String(site.id)} checked={publishingSiteId === String(site.id)} onChange={(event) => setPublishingSiteId(event.target.value)} />
+                  <span className="wordpress-site-choice-copy"><strong>{site.name}</strong><small>{site.url}</small></span>
+                  <span className="site-choice-indicator">{publishingSiteId === String(site.id) ? "Selected" : "Choose"}</span>
+                </label>)}
+              </div>
+              <div className="button-row publish-modal-actions">
+                <button type="button" className="secondary-button" disabled={publishingArticle} onClick={() => { setPublishingTargetArticle(null); setPublishingSiteId(""); }}>Cancel</button>
+                <button type="button" className="primary-button" disabled={!publishingSiteId || publishingArticle} onClick={() => void confirmPublishArticle()}>{publishingArticle ? "Sending article..." : "Send as WordPress Draft"}</button>
+              </div>
+            </section>
+          </div>
+        )}
 
         {previewArticle && (
           <div className="article-preview-modal" role="dialog" aria-modal="true" aria-label="Article preview">
