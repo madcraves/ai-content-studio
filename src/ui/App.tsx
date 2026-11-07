@@ -71,7 +71,18 @@ function App() {
 
   const [sites, setSites] = useState<any[]>([]);
   const [providers, setProviders] = useState<any[]>([]);
+  const [imageProviders, setImageProviders] = useState<any[]>([]);
   const [articles, setArticles] = useState<any[]>([]);
+  const [selectedArticleProvider, setSelectedArticleProvider] = useState("gemini");
+  const [imageApiKeyInputs, setImageApiKeyInputs] = useState<Record<string, string>>({});
+  const [imageProviderSaving, setImageProviderSaving] = useState<string | null>(null);
+  const [selectedImageProvider, setSelectedImageProvider] = useState("image-openai");
+  const [imagePrompt, setImagePrompt] = useState("");
+  const [imageLoading, setImageLoading] = useState(false);
+  const [generatedImage, setGeneratedImage] = useState("");
+  const [previewArticle, setPreviewArticle] = useState<any>(null);
+  const [previewImage, setPreviewImage] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [schedules, setSchedules] = useState<any[]>([]);
   const [stats, setStats] = useState<any>({});
 
@@ -146,12 +157,14 @@ function App() {
         dashboardData,
         siteData,
         providerData,
+        imageProviderData,
         articleData,
         scheduleData,
       ] = await Promise.all([
         studio.dashboard(),
         studio.listSites(),
         studio.listProviders(),
+        studio.listImageProviders(),
         studio.listArticles(),
         studio.listSchedules(),
       ]);
@@ -159,6 +172,10 @@ function App() {
       setStats(dashboardData || {});
       setSites(Array.isArray(siteData) ? siteData : []);
       setProviders(Array.isArray(providerData) ? providerData : []);
+      setImageProviders(Array.isArray(imageProviderData) ? imageProviderData : []);
+      if (Array.isArray(providerData) && providerData.length && !providerData.some((item: any) => item.id === selectedArticleProvider)) {
+        setSelectedArticleProvider(providerData.find((item: any) => item.configured)?.id || providerData[0].id);
+      }
       setArticles(Array.isArray(articleData) ? articleData : []);
       setSchedules(Array.isArray(scheduleData) ? scheduleData : []);
     } catch (err: any) {
@@ -456,6 +473,7 @@ function App() {
       const result = await studio.generate({
         topic: topic.trim(),
         keyword: keyword.trim(),
+        providerId: selectedArticleProvider,
         wordCount: count,
         tone,
         instructions: instructions.trim(),
@@ -479,6 +497,65 @@ function App() {
       notify(err?.message || "Article generation failed.", true);
     } finally {
       setArticleLoading(false);
+    }
+  }
+
+  async function saveImageProvider(provider: any) {
+    clearNotifications();
+    const apiKey = imageApiKeyInputs[provider.id]?.trim();
+    if (!apiKey) {
+      notify(`Enter your ${provider.name} API key first.`, true);
+      return;
+    }
+    setImageProviderSaving(provider.id);
+    try {
+      await studio.saveImageProvider({ providerId: provider.id, apiKey });
+      setImageApiKeyInputs((current) => ({ ...current, [provider.id]: "" }));
+      const refreshed = await studio.listImageProviders();
+      setImageProviders(Array.isArray(refreshed) ? refreshed : []);
+      notify(`${provider.name} API key saved securely.`);
+    } catch (err: any) {
+      notify(err?.message || `Unable to save ${provider.name} API key.`, true);
+    } finally {
+      setImageProviderSaving(null);
+    }
+  }
+
+  async function generateFeaturedImage() {
+    if (!generatedArticle?.id) {
+      notify("Generate an article first, then create its featured image.", true);
+      return;
+    }
+    clearNotifications();
+    setImageLoading(true);
+    try {
+      const result = await studio.generateImage({
+        articleId: Number(generatedArticle.id),
+        providerId: selectedImageProvider,
+        prompt: imagePrompt.trim() || generatedArticle.title,
+      });
+      if (!result?.ok || !result?.imageDataUrl) throw new Error(result?.message || "Image generation failed.");
+      setGeneratedImage(result.imageDataUrl);
+      await loadData(true);
+      notify("Featured image generated and saved with your article.");
+    } catch (err: any) {
+      notify(err?.message || "Image generation failed.", true);
+    } finally {
+      setImageLoading(false);
+    }
+  }
+
+  async function openArticlePreview(article: any) {
+    setPreviewArticle(article);
+    setPreviewImage("");
+    setPreviewLoading(true);
+    try {
+      const image = await studio.getArticleImage(Number(article.id));
+      setPreviewImage(typeof image === "string" ? image : "");
+    } catch {
+      setPreviewImage("");
+    } finally {
+      setPreviewLoading(false);
     }
   }
 
@@ -1025,6 +1102,17 @@ function App() {
                         </select>
                       </div>
                     </div>
+                    <div className="form-group">
+                      <label>AI Provider</label>
+                      <select value={selectedArticleProvider} onChange={(event) => setSelectedArticleProvider(event.target.value)}>
+                        {providers.filter((provider: any) => !String(provider.id).startsWith("image-")).map((provider: any) => (
+                          <option key={provider.id} value={provider.id} disabled={!provider.configured}>
+                            {provider.name}{provider.configured ? "" : " — API key not saved"}
+                          </option>
+                        ))}
+                      </select>
+                      <small>Only the selected provider will generate this article. Configure its API key in AI Providers.</small>
+                    </div>
                     <div className="form-group brief-instructions">
                       <label>Additional Instructions</label>
                       <textarea rows={5} value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="Audience, brand details, style preferences, SEO instructions and other requirements..." />
@@ -1080,13 +1168,36 @@ function App() {
                   <section className="blog-image-card">
                     <div className="generator-card-title">
                       <div className="section-number image-number">03</div>
-                      <div><h3>Blog Image</h3><p>Featured image for your article.</p></div>
-                      <span className="coming-soon-label">Not connected</span>
+                      <div><h3>Blog Image Generator</h3><p>Create a featured image with OpenAI or Google Imagen.</p></div>
+                      <span className={imageProviders.some((item: any) => item.id === selectedImageProvider && item.configured) ? "connected" : "coming-soon-label"}>
+                        {imageProviders.some((item: any) => item.id === selectedImageProvider && item.configured) ? "API ready" : "API setup needed"}
+                      </span>
                     </div>
-                    <div className="image-placeholder">
-                      <div className="image-placeholder-art"><span>✧</span><i /><b /></div>
-                      <div><strong>Featured image workspace</strong><small>Image generation is not connected in this build yet.</small></div>
+                    <div className="image-tool-controls">
+                      <div className="form-group">
+                        <label>Image Provider</label>
+                        <select value={selectedImageProvider} onChange={(event) => setSelectedImageProvider(event.target.value)}>
+                          {imageProviders.map((provider: any) => (
+                            <option key={provider.id} value={provider.id}>{provider.name}{provider.configured ? "" : " — configure API key"}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>Image Prompt</label>
+                        <textarea rows={2} value={imagePrompt} onChange={(event) => setImagePrompt(event.target.value)} placeholder={generatedArticle?.title || "Describe the featured image you want..."} />
+                      </div>
+                      <button type="button" className="primary-button" disabled={!generatedArticle?.id || imageLoading || !imageProviders.some((item: any) => item.id === selectedImageProvider && item.configured)} onClick={() => void generateFeaturedImage()}>
+                        {imageLoading ? <><span className="button-spinner" /> Generating Image...</> : "✦ Generate Featured Image"}
+                      </button>
                     </div>
+                    {generatedImage ? (
+                      <img className="generated-featured-image" src={generatedImage} alt="Generated featured image" />
+                    ) : (
+                      <div className="image-placeholder">
+                        <div className="image-placeholder-art"><span>✧</span><i /><b /></div>
+                        <div><strong>Featured image workspace</strong><small>Save an OpenAI Images or Google Imagen API key in AI Providers to begin.</small></div>
+                      </div>
+                    )}
                   </section>
                 </div>
               </div>
@@ -1238,6 +1349,13 @@ function App() {
                       </div>
 
                       <div className="button-row">
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => void openArticlePreview(article)}
+                        >
+                          Preview
+                        </button>
                         <button
                           type="button"
                           className="secondary-button"
@@ -1496,6 +1614,29 @@ function App() {
             <>
               <section className="panel"><div className="panel-heading"><div><h3>Available AI Providers</h3><p>Built-in providers and your manually configured APIs.</p></div><span className="connected">{providers.length} providers available</span></div></section>
 
+              <section className="panel image-api-settings">
+                <div className="panel-heading">
+                  <div><h3>Image Generation APIs</h3><p>Configure separate API keys for featured-image creation.</p></div>
+                  <span className="status-badge">2 image providers</span>
+                </div>
+                <div className="image-api-grid">
+                  {imageProviders.map((provider: any) => (
+                    <div className="image-api-card" key={provider.id}>
+                      <div><strong>{provider.name}</strong><small>{provider.id === "image-openai" ? "OpenAI Images · gpt-image-1" : "Google Imagen · imagen-4.0-generate-001"}</small></div>
+                      <span className={provider.configured ? "connected" : "muted"}>{provider.configured ? "Key saved" : "Not configured"}</span>
+                      <div className="form-group">
+                        <label>API Key</label>
+                        <input type="password" autoComplete="new-password" value={imageApiKeyInputs[provider.id] || ""} onChange={(event) => setImageApiKeyInputs((current) => ({ ...current, [provider.id]: event.target.value }))} placeholder={provider.configured ? "Saved securely — enter to replace" : "Paste API key"} />
+                        <small>{provider.configured ? "Leave blank to keep the saved key." : "Your key is encrypted and stored locally."}</small>
+                      </div>
+                      <button type="button" className="primary-button" disabled={imageProviderSaving === provider.id} onClick={() => void saveImageProvider(provider)}>
+                        {imageProviderSaving === provider.id ? "Saving..." : "Save Image API"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
               <div className="provider-grid">
                 {providers.map((provider: any) => (
                   <section
@@ -1570,6 +1711,19 @@ function App() {
             </>
           )}
         </div>
+
+        {previewArticle && (
+          <div className="article-preview-modal" role="dialog" aria-modal="true" aria-label="Article preview">
+            <section className="article-preview-modal-card">
+              <div className="panel-heading">
+                <div><h3>{previewArticle.title || "Article Preview"}</h3><small>{previewArticle.provider || "AI generated"} · {formatDate(previewArticle.created_at)}</small></div>
+                <button type="button" className="secondary-button" onClick={() => { setPreviewArticle(null); setPreviewImage(""); }}>Close</button>
+              </div>
+              {previewLoading ? <p className="muted">Loading preview...</p> : previewImage ? <img className="library-featured-image" src={previewImage} alt="Article featured image" /> : null}
+              <iframe className="library-preview-frame" title="Full article preview" sandbox="" srcDoc={String(previewArticle.content || "")} />
+            </section>
+          </div>
+        )}
 
         <footer className="app-footer">
           <span>© MadCraves</span>
