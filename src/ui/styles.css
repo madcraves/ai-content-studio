@@ -204,3 +204,14 @@ button:disabled{cursor:not-allowed;opacity:.58}
 .publishing-controls .primary-button{min-height:39px}
 @media(max-width:1050px){.generator-workspace{height:auto;min-height:0;overflow:visible}.generator-columns{grid-template-columns:1fr}.brief-card{min-height:520px}.generated-column{grid-template-rows:minmax(350px,1fr) auto}.publishing-card{align-items:flex-start;flex-direction:column}.publishing-controls{width:100%}.publishing-controls select{flex:1;width:auto}}
 @media(max-width:650px){.generator-heading{align-items:flex-start;flex-direction:column}.generator-stepper{width:100%;overflow-x:auto}.generator-stepper span{font-size:8px}.brief-card{padding:16px;min-height:0}.brief-form .brief-instructions textarea{min-height:130px}.brief-submit{align-items:stretch;flex-direction:column}.brief-submit>span{max-width:none}.brief-submit .primary-button{width:100%}.generated-card{min-height:370px;padding:15px}.generated-title-row{flex-wrap:wrap}.generated-title-row .status-badge{margin-left:0}.publishing-controls{align-items:stretch;flex-direction:column}.publishing-controls select{width:100%;min-width:0}.publishing-controls .primary-button{width:100%}.publishing-copy{align-items:flex-start}}
+
+
+/* Manual API provider and multi-agent controls */
+.manual-provider-panel{margin-bottom:17px}
+.agent-mode-toggle{display:flex;align-items:center;gap:11px;padding:12px 13px;border:1px solid #e3defa;border-radius:10px;background:#f8f6ff;cursor:pointer}
+.agent-mode-toggle input{width:16px;height:16px;accent-color:#6855d4;flex:0 0 auto}
+.agent-mode-toggle span{display:flex;flex-direction:column;gap:4px}
+.agent-mode-toggle strong{color:#393451;font-size:10px;font-weight:800}
+.agent-mode-toggle small{color:#88839d;font-size:9px;line-height:1.5}
+.manual-provider-panel .form-footer{align-items:center}
+@media(max-width:650px){.manual-provider-panel .form-footer{align-items:stretch}.manual-provider-panel .form-footer .primary-button{width:100%}}
