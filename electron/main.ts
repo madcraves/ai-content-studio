@@ -792,6 +792,7 @@ ipcMain.handle("images:search", async (_event, input) => {
   if (!queries.length) throw new Error("The article does not contain enough topic information to search for images.");
 
   const batches = await Promise.all(queries.map(async (item) => {
+    try {
     const params = new URLSearchParams({
       action: "query", format: "json", generator: "search", gsrnamespace: "6",
       gsrsearch: item.query, gsrlimit: "8", prop: "imageinfo",
@@ -837,9 +838,10 @@ ipcMain.handle("images:search", async (_event, input) => {
     }).filter((image: any) => image.imageUrl && image.thumbnailUrl && image.sourceUrl
       && image.width >= 600 && image.height >= 350
       && /^(CC0|CC BY|CC BY-SA|Public domain)/i.test(image.license));
-  }).catch((error) => {
-    console.warn(`[Image Search] Query failed ("${item.query}"): ${error instanceof Error ? error.message : String(error)}`);
-    return [];
+    } catch (error: unknown) {
+      console.warn(`[Image Search] Query failed ("${item.query}"): ${error instanceof Error ? error.message : String(error)}`);
+      return [];
+    }
   }));
 
   if (batches.every((batch) => batch.length === 0)) {
