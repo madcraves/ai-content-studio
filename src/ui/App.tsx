@@ -84,6 +84,12 @@ function App() {
     Record<string, string>
   >({});
   const [providerLoading, setProviderLoading] = useState<string | null>(null);
+  const [manualProviderName, setManualProviderName] = useState("");
+  const [manualProviderModel, setManualProviderModel] = useState("");
+  const [manualProviderBaseUrl, setManualProviderBaseUrl] = useState("");
+  const [manualProviderApiKey, setManualProviderApiKey] = useState("");
+  const [manualProviderSaving, setManualProviderSaving] = useState(false);
+  const [multiAgent, setMultiAgent] = useState(true);
 
   const [siteName, setSiteName] = useState("");
   const [siteUrl, setSiteUrl] = useState("");
@@ -283,6 +289,24 @@ function App() {
     }
   }
 
+  async function saveManualProvider(event?: React.FormEvent) {
+    event?.preventDefault();
+    clearNotifications();
+    if (!manualProviderName.trim() || !manualProviderModel.trim() || !manualProviderBaseUrl.trim() || !manualProviderApiKey.trim()) {
+      notify("Complete provider name, Base URL, Model ID and API key.", true);
+      return;
+    }
+    setManualProviderSaving(true);
+    try {
+      await studio.saveProvider({ name: manualProviderName.trim(), provider: "openai-compatible", model: manualProviderModel.trim(), baseUrl: manualProviderBaseUrl.trim(), apiKey: manualProviderApiKey.trim(), enabled: true });
+      setManualProviderName(""); setManualProviderModel(""); setManualProviderBaseUrl(""); setManualProviderApiKey("");
+      await loadData(true);
+      notify("Custom AI provider saved. Test its connection before generating content.");
+    } catch (err: any) {
+      notify(err?.message || "Unable to save custom AI provider.", true);
+    } finally { setManualProviderSaving(false); }
+  }
+
   async function addWebsite(event?: React.FormEvent) {
     event?.preventDefault();
     clearNotifications();
@@ -393,6 +417,7 @@ function App() {
         wordCount: count,
         tone,
         instructions: instructions.trim(),
+        multiAgent,
       });
 
       if (result?.ok === false) {
@@ -780,7 +805,7 @@ function App() {
                   },
                   {
                     label: "Available AI Providers",
-                    value: PROVIDERS.length,
+                    value: providers.length,
                     icon: "✦",
                   },
                   {
@@ -853,7 +878,7 @@ function App() {
 
                   <div className="overview-item">
                     <span>AI providers</span>
-                    <strong>{PROVIDERS.length} available</strong>
+                    <strong>{providers.length} available</strong>
                   </div>
 
                   <div className="overview-item">
@@ -914,6 +939,10 @@ function App() {
                       <label>Additional Instructions</label>
                       <textarea rows={5} value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="Audience, brand details, style preferences, SEO instructions and other requirements..." />
                     </div>
+                    <label className="agent-mode-toggle">
+                      <input type="checkbox" checked={multiAgent} onChange={(event) => setMultiAgent(event.target.checked)} />
+                      <span><strong>Multi-Agent Workflow</strong><small>Research → SEO Strategy → Writing → Editing → Fact-checking</small></span>
+                    </label>
                     <div className="brief-submit">
                       <span>AI output is saved to your Article Library automatically.</span>
                       <button type="submit" className="primary-button" disabled={articleLoading}>
@@ -1375,24 +1404,23 @@ function App() {
           {/* AI PROVIDERS */}
           {page === "AI Providers" && (
             <>
-              <section className="panel">
-                <div className="panel-heading">
-                  <div>
-                    <h3>Built-in AI Providers</h3>
-                    <p>
-                      Your AI providers are configured in the application
-                      backend. No manual API-key entry is required here.
-                    </p>
+              <section className="panel manual-provider-panel">
+                <div className="panel-heading"><div><h3>Add a Custom AI Provider</h3><p>Connect any OpenAI-compatible API endpoint using your own API key and model ID.</p></div><span className="status-badge">Manual API</span></div>
+                <form onSubmit={saveManualProvider}>
+                  <div className="form-grid">
+                    <div className="form-group"><label>Provider Name *</label><input value={manualProviderName} onChange={(event) => setManualProviderName(event.target.value)} placeholder="e.g. Together AI, Fireworks, Local LLM" required /></div>
+                    <div className="form-group"><label>Model ID *</label><input value={manualProviderModel} onChange={(event) => setManualProviderModel(event.target.value)} placeholder="e.g. meta-llama/Llama-3.3-70B-Instruct" required /></div>
+                    <div className="form-group full-width"><label>API Base URL *</label><input type="url" value={manualProviderBaseUrl} onChange={(event) => setManualProviderBaseUrl(event.target.value)} placeholder="https://api.provider.com/v1" required /><small>Enter the API base URL ending in /v1, or the full /chat/completions endpoint.</small></div>
+                    <div className="form-group full-width"><label>API Key *</label><input type="password" value={manualProviderApiKey} onChange={(event) => setManualProviderApiKey(event.target.value)} placeholder="Paste your provider API key" required autoComplete="off" /></div>
                   </div>
-
-                  <span className="connected">
-                    {PROVIDERS.length} providers available
-                  </span>
-                </div>
+                  <div className="form-footer"><small className="muted">API keys are stored using Electron secure storage when available. Keys are never shown in the provider list.</small><button type="submit" className="primary-button" disabled={manualProviderSaving}>{manualProviderSaving ? "Saving..." : "+ Save Custom Provider"}</button></div>
+                </form>
               </section>
 
+              <section className="panel"><div className="panel-heading"><div><h3>Available AI Providers</h3><p>Built-in providers and your manually configured APIs.</p></div><span className="connected">{providers.length} providers available</span></div></section>
+
               <div className="provider-grid">
-                {PROVIDERS.map((provider) => (
+                {providers.map((provider: any) => (
                   <section
                     className="panel provider-card"
                     key={provider.id}
@@ -1400,18 +1428,14 @@ function App() {
                     <div className="panel-heading">
                       <div>
                         <h3>{provider.name}</h3>
-                        <small>{provider.description}</small>
+                        <small>{provider.description || (provider.builtIn ? "Built-in AI service" : "Custom OpenAI-compatible API")}</small>
                       </div>
 
                       {renderProviderStatus(provider.id)}
                     </div>
 
                     <div className="provider-logo">
-                      {provider.id === "gemini"
-                        ? "G"
-                        : provider.id === "groq"
-                          ? "GQ"
-                          : "OR"}
+                      {provider.id === "gemini" ? "G" : provider.id === "groq" ? "GQ" : provider.id === "openrouter" ? "OR" : "API"}
                     </div>
 
                     <div className="form-group">
@@ -1421,7 +1445,7 @@ function App() {
 
                     <p className="provider-saved">
                       <span className="status-dot online" />
-                      Built-in API configuration
+                      {provider.builtIn ? "Built-in API configuration" : "Manual API configuration"}
                     </p>
 
                     <button
