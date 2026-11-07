@@ -10,7 +10,7 @@
     "start": "electron .",
     "dist:portable": "npm run build && electron-builder --win portable --x64 --config.directories.output=release/portable",
     "make:portable": "npm run dist:portable",
-    "dist:installer": "npm run build && electron-builder --win nsis --x64 --config.directories.output=release/installer",
+    "dist:installer": "npm run build && electron-builder --win nsis --x64 --publish never --config.directories.output=release/installer",
     "make:installer": "npm run dist:installer"
   },
   "dependencies": {
