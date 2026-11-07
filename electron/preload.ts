@@ -43,10 +43,8 @@ contextBridge.exposeInMainWorld("studio", {
   testProvider: (providerId: number | string) =>
     ipcRenderer.invoke("providers:test", providerId),
 
-  // Image generation providers and featured article images
-  listImageProviders: () => ipcRenderer.invoke("images:providers:list"),
-  saveImageProvider: (input: any) => ipcRenderer.invoke("images:providers:save", input),
-  generateImage: (input: any) => ipcRenderer.invoke("images:generate", input),
+  // Context-aware article image search
+  searchArticleImages: (input: any) => ipcRenderer.invoke("images:search", input),
   getArticleImage: (articleId: number) => ipcRenderer.invoke("images:get", articleId),
 
   // Articles
