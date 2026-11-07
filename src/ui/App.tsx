@@ -84,6 +84,7 @@ function App() {
   const [providers, setProviders] = useState<any[]>([]);
   const [imageProviders, setImageProviders] = useState<any[]>([]);
   const [articles, setArticles] = useState<any[]>([]);
+  const [deletingArticleId, setDeletingArticleId] = useState<number | null>(null);
   const [selectedArticleProvider, setSelectedArticleProvider] = useState("gemini");
   const [imageApiKeyInputs, setImageApiKeyInputs] = useState<Record<string, string>>({});
   const [imageProviderSaving, setImageProviderSaving] = useState<string | null>(null);
@@ -469,6 +470,32 @@ function App() {
       notify("Website removed.");
     } catch (err: any) {
       notify(err?.message || "Unable to remove website.", true);
+    }
+  }
+
+  async function deleteArticle(article: any) {
+    if (!article?.id) return;
+    const title = article.title || "this article";
+    if (!window.confirm(`Delete "${title}" permanently? This will also remove its saved featured image. This action cannot be undone.`)) return;
+
+    clearNotifications();
+    setDeletingArticleId(Number(article.id));
+    try {
+      await studio.deleteArticle(Number(article.id));
+      setArticles((current) => current.filter((item: any) => Number(item.id) !== Number(article.id)));
+      if (Number(editingArticle?.id) === Number(article.id)) setEditingArticle(null);
+      if (Number(previewArticle?.id) === Number(article.id)) { setPreviewArticle(null); setPreviewImage(""); }
+      if (Number(generatedArticle?.id) === Number(article.id)) {
+        setGeneratedArticle(null);
+        setGeneratedImage("");
+        setImagePrompt("");
+      }
+      await loadData(true);
+      notify("Article deleted successfully.");
+    } catch (err: any) {
+      notify(err?.message || "Unable to delete article.", true);
+    } finally {
+      setDeletingArticleId(null);
     }
   }
 
@@ -1342,6 +1369,14 @@ function App() {
                           onClick={() => void publishArticle(article.id)}
                         >
                           Send to WordPress
+                        </button>
+                        <button
+                          type="button"
+                          className="danger-button"
+                          disabled={deletingArticleId === Number(article.id)}
+                          onClick={() => void deleteArticle(article)}
+                        >
+                          {deletingArticleId === Number(article.id) ? "Deleting..." : "Delete"}
                         </button>
                       </div>
                     </section>
