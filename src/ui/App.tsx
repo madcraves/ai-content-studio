@@ -1462,7 +1462,7 @@ function App() {
               )}
               <section className="panel image-studio-section" id="image-generation-section">
                 <div className="panel-heading">
-                  <div><span className="eyebrow-light">VISUAL CONTENT WORKSPACE</span><h3>Image Generation Studio</h3><p>Create a blog-specific featured image using OpenAI Images or Google Imagen.</p></div>
+                  <div><span className="eyebrow-light">VISUAL CONTENT WORKSPACE</span><h3>Image Generation Studio</h3><p>Create a blog-specific featured image using OpenAI Images or Google Nano Banana 2.</p></div>
                   <span className={imageProviders.some((item: any) => item.id === selectedImageProvider && item.configured) ? "connected" : "coming-soon-label"}>{imageProviders.some((item: any) => item.id === selectedImageProvider && item.configured) ? "API ready" : "API setup needed"}</span>
                 </div>
                 <div className="image-studio-layout">
@@ -1748,7 +1748,7 @@ function App() {
                 <div className="image-api-grid">
                   {imageProviders.map((provider: any) => (
                     <div className="image-api-card" key={provider.id}>
-                      <div><strong>{provider.name}</strong><small>{provider.id === "image-openai" ? "OpenAI Images · gpt-image-1" : "Google Imagen · imagen-4.0-generate-001"}</small></div>
+                      <div><strong>{provider.name}</strong><small>{provider.id === "image-openai" ? "OpenAI Images · gpt-image-1" : "Google Nano Banana 2 · gemini-3.1-flash-image"}</small></div>
                       <span className={provider.configured ? "connected" : "muted"}>{provider.configured ? "Key saved" : "Not configured"}</span>
                       <div className="form-group">
                         <label>API Key</label>
