@@ -514,6 +514,12 @@ async function callAI(
   return parseArticle(parsed, provider);
 }
 
+// Detect provider quota exhaustion and throttling so backup agents can take over.
+function isQuotaOrRateLimitError(error: any): boolean {
+  const message = String(error?.message || error || "").toLowerCase();
+  return /\b429\b|quota|resource_exhausted|rate.?limit|too many requests|requests per day|daily limit|billing.*limit/.test(message);
+}
+
 // --------------------------------------------------
 // RETRY PROVIDER
 // --------------------------------------------------
@@ -533,6 +539,8 @@ async function generateWithRetry(
       return await callAI(input, provider);
     } catch (error: any) {
       lastError = error;
+      // Quota/rate-limit errors will not recover by retrying the same provider.
+      if (isQuotaOrRateLimitError(error)) break;
 
       if (attempt < MAX_RETRIES) {
         console.warn(
@@ -636,7 +644,9 @@ export async function runParallelGeneration(
 }
 
 
-// Multi-agent collaboration: each specialist receives and improves the previous draft.
+// Multi-agent collaboration with automatic provider failover.
+// A provider that hits quota or fails is skipped for the remainder of this article run;
+// the next configured provider takes over without interrupting the user.
 export async function runMultiAgentGeneration(input: GenerationInput, providers: AIProvider[]): Promise<GeneratedArticle[]> {
   const active = (providers || []).filter((p) => p.enabled !== false && Boolean(p.apiKey?.trim()) && Boolean(p.model?.trim()));
   if (!active.length) throw new Error("No active AI providers are configured for the agent team.");
@@ -647,26 +657,43 @@ export async function runMultiAgentGeneration(input: GenerationInput, providers:
     { role: "Fact-Check & Final QA Agent", task: "Review factual consistency, qualify unsupported claims, check structure and produce the final publish-ready article. Never fabricate citations." },
   ];
   while (stages.length < active.length) {
-    stages.push({ role: `Independent Review Agent ${stages.length + 1}`, task: "Independently review the current article for missing topical coverage, weak explanations, factual caution, SEO opportunities and human readability. Improve the article substantially without adding unsupported claims." });
+    stages.push({ role: `Independent Review Agent \${stages.length + 1}`, task: "Independently review the current article for missing topical coverage, weak explanations, factual caution, SEO opportunities and human readability. Improve the article substantially without adding unsupported claims." });
   }
   let previous: GeneratedArticle | null = null;
+  const unavailable = new Set<string>();
+  const successfulStages: string[] = [];
   for (let i = 0; i < stages.length; i++) {
     const stage = stages[i];
-    const provider = active[i % active.length];
     const agentInput: GenerationInput = {
       ...input,
       instructions: [input.instructions || "",
-        `AGENT ROLE: ${stage.role}. ${stage.task}`,
-        previous ? `PREVIOUS AGENT DRAFT — improve it, do not summarize:\\nTitle: ${previous.title}\\nExcerpt: ${previous.excerpt}\\nHTML: ${previous.content}\\nKeywords: ${previous.keywords.join(", ")}` : "Start with a research-led outline and complete first draft.",
+        `AGENT ROLE: \${stage.role}. \${stage.task}`,
+        previous ? `PREVIOUS AGENT DRAFT — improve it, do not summarize:\\nTitle: \${previous.title}\\nExcerpt: \${previous.excerpt}\\nHTML: \${previous.content}\\nKeywords: \${previous.keywords.join(", ")}` : "Start with a research-led outline and complete first draft.",
         "Return the required JSON article object with valid WordPress HTML."
       ].filter(Boolean).join("\\n\\n"),
     };
-    previous = await generateWithRetry(agentInput, provider);
+    let stageResult: GeneratedArticle | null = null;
+    const errors: string[] = [];
+    const ordered = active.map((_, offset) => active[(i + offset) % active.length]);
+    for (const provider of ordered) {
+      const providerId = getProviderId(provider);
+      if (unavailable.has(providerId)) continue;
+      try {
+        stageResult = await generateWithRetry(agentInput, provider);
+        successfulStages.push(`${stage.role}: ${provider.model}`);
+        break;
+      } catch (error: any) {
+        unavailable.add(providerId);
+        errors.push(`${providerId}: ${error?.message || String(error)}`);
+        console.warn(`Agent provider ${providerId} unavailable for this generation; switching to backup.`);
+      }
+    }
+    if (!stageResult) throw new Error("All configured AI agents are temporarily unavailable. " + errors.join(" | "));
+    previous = stageResult;
   }
   if (!previous) throw new Error("The multi-agent workflow did not produce an article.");
-  return [{ ...previous, provider: "multi-agent-team", model: stages.map((stage, i) => `${stage.role}: ${active[i % active.length].model}`).join(" → ") }];
+  return [{ ...previous, provider: "multi-agent-team", model: successfulStages.join(" → ") }];
 }
-
 
 // Revise an existing saved article using the user's instructions and one selected AI provider.
 export async function reviseArticleWithAI(
