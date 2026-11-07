@@ -747,15 +747,15 @@ ipcMain.handle("images:get", (_event, articleId: number) => {
   requireValidLicense();
   const article = db.getArticle(Number(articleId));
   if (!article) return null;
-  if (article.featured_image_path && fs.existsSync(article.featured_image_path)) {
-    const extension = path.extname(article.featured_image_path).toLowerCase();
-    const mime = extension === ".jpg" || extension === ".jpeg" ? "image/jpeg" : "image/png";
-    return `data:${mime};base64,${fs.readFileSync(article.featured_image_path).toString("base64")}`;
-  }
   const content = String(article.content || "");
   const featured = content.match(/<!--\s*MADCRAVES_FEATURED_IMAGE:([\s\S]*?)\s*-->/i);
   if (featured?.[1]) {
     try { return JSON.parse(decodeURIComponent(featured[1])).url || null; } catch { return null; }
+  }
+  if (article.featured_image_path && fs.existsSync(article.featured_image_path)) {
+    const extension = path.extname(article.featured_image_path).toLowerCase();
+    const mime = extension === ".jpg" || extension === ".jpeg" ? "image/jpeg" : "image/png";
+    return `data:${mime};base64,${fs.readFileSync(article.featured_image_path).toString("base64")}`;
   }
   const firstImage = content.match(/<img\b[^>]*src=["'](https?:\/\/[^"']+)["']/i);
   return firstImage?.[1] || null;
