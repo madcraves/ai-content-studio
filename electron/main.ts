@@ -762,7 +762,7 @@ ipcMain.handle("images:get", (_event, articleId: number) => {
 });
 
 // --------------------------------------------------
-// ARTICLE IMAGE SEARCH (WIKIMEDIA COMMONS)
+// ARTICLE IMAGE SEARCH (OPENVERSE + WIKIMEDIA COMMONS)
 // --------------------------------------------------
 
 function cleanImageSearchText(value: string): string {
@@ -791,61 +791,111 @@ ipcMain.handle("images:search", async (_event, input) => {
   ].filter((item) => item.query.length > 2);
   if (!queries.length) throw new Error("The article does not contain enough topic information to search for images.");
 
-  const batches = await Promise.all(queries.map(async (item) => {
-    try {
+  async function requestJson(url: string): Promise<any> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const response = await net.fetch(url, {
+          headers: {
+            "User-Agent": "MadCravesAIContentStudio/1.0 (https://madcraves.com)",
+            "Accept": "application/json",
+          },
+          signal: AbortSignal.timeout(30000),
+        });
+        if (response.ok) return await response.json();
+        const body: any = await response.clone().json().catch(() => ({}));
+        const message = body?.detail || body?.error?.info || `Image provider returned HTTP ${response.status}.`;
+        if (response.status < 500 && response.status !== 429) throw new Error(message);
+        lastError = new Error(message);
+      } catch (error) {
+        lastError = error;
+      }
+      if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 1200));
+    }
+    throw lastError instanceof Error ? lastError : new Error("Image provider network request failed.");
+  }
+
+  async function searchOpenverse(item: { query: string; section: string }) {
+    const params = new URLSearchParams({
+      q: item.query,
+      page_size: "20",
+      license: "cc0,by,by-sa,pdm",
+      mature: "false",
+    });
+    const data = await requestJson("https://api.openverse.org/v1/images/?" + params.toString());
+    return (Array.isArray(data?.results) ? data.results : []).map((image: any) => ({
+      id: `openverse-${image.id || image.url}`,
+      title: String(image.title || "Untitled image"),
+      imageUrl: String(image.url || ""),
+      thumbnailUrl: String(image.thumbnail || image.url || ""),
+      sourceUrl: String(image.foreign_landing_url || image.detail_url || ""),
+      width: Number(image.width || 0),
+      height: Number(image.height || 0),
+      artist: String(image.creator || "Unknown creator"),
+      license: String(image.license || "License not specified").toUpperCase(),
+      usageTerms: String(image.license_version || ""),
+      attribution: String(image.attribution || image.creator || ""),
+      description: String(image.title || item.query),
+      section: item.section,
+      searchQuery: item.query,
+      provider: "Openverse",
+    })).filter((image: any) => image.imageUrl.startsWith("https://")
+      && image.thumbnailUrl.startsWith("https://") && image.sourceUrl.startsWith("https://")
+      && image.width >= 600 && image.height >= 350
+      && /^(CC0|BY|BY-SA|PDM)$/i.test(image.license));
+  }
+
+  async function searchCommons(item: { query: string; section: string }) {
     const params = new URLSearchParams({
       action: "query", format: "json", generator: "search", gsrnamespace: "6",
       gsrsearch: item.query, gsrlimit: "8", prop: "imageinfo",
       iiprop: "url|extmetadata", iiurlwidth: "1000",
     });
-    const requestUrl = "https://commons.wikimedia.org/w/api.php?" + params.toString();
-    let lastError: unknown;
-    let response: Response | undefined;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        // Chromium-backed networking respects Windows proxy and TLS configuration.
-        response = await net.fetch(requestUrl, {
-          headers: { "User-Agent": "MadCravesAIContentStudio/1.0 (https://madcraves.com)", "Accept": "application/json" },
-          signal: AbortSignal.timeout(30000),
-        });
-        if (response.ok) break;
-        const errorBody: any = await response.clone().json().catch(() => ({}));
-        const message = errorBody?.error?.info || `Wikimedia Commons returned HTTP ${response.status}.`;
-        if (response.status < 500 && response.status !== 429) throw new Error(message);
-        lastError = new Error(message);
-      } catch (error) { lastError = error; }
-      if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 1200));
-    }
-    if (!response?.ok) {
-      const detail = lastError instanceof Error ? lastError.message : String(lastError || "Unknown network error");
-      throw new Error(`Could not connect to Wikimedia Commons after 3 attempts: ${detail}`);
-    }
-    const data: any = await response.json().catch(() => ({}));
+    const data = await requestJson("https://commons.wikimedia.org/w/api.php?" + params.toString());
     return Object.values(data?.query?.pages || {}).map((page: any) => {
       const info = page?.imageinfo?.[0];
       const meta = info?.extmetadata || {};
       const value = (key: string) => String(meta?.[key]?.value || "").replace(/<[^>]*>/g, " ").replace(/\\s+/g, " ").trim();
       return {
-        id: String(page.pageid), title: String(page.title || "").replace(/^File:/, ""),
-        imageUrl: info?.url || "", thumbnailUrl: info?.thumburl || info?.url || "", sourceUrl: info?.descriptionurl || "",
-        width: Number(info?.width || 0), height: Number(info?.height || 0),
+        id: `commons-${page.pageid}`,
+        title: String(page.title || "").replace(/^File:/, ""),
+        imageUrl: info?.url || "",
+        thumbnailUrl: info?.thumburl || info?.url || "",
+        sourceUrl: info?.descriptionurl || "",
+        width: Number(info?.width || 0),
+        height: Number(info?.height || 0),
         artist: value("Artist") || value("Credit") || "Unknown creator",
-        license: value("LicenseShortName") || "License not specified", usageTerms: value("UsageTerms"),
+        license: value("LicenseShortName") || "License not specified",
+        usageTerms: value("UsageTerms"),
         attribution: value("Attribution") || value("Artist"),
         description: value("ImageDescription") || String(page.title || "").replace(/^File:/, ""),
-        section: item.section, searchQuery: item.query,
+        section: item.section,
+        searchQuery: item.query,
+        provider: "Wikimedia Commons",
       };
-    }).filter((image: any) => image.imageUrl && image.thumbnailUrl && image.sourceUrl
+    }).filter((image: any) => image.imageUrl.startsWith("https://")
+      && image.thumbnailUrl.startsWith("https://") && image.sourceUrl.startsWith("https://")
       && image.width >= 600 && image.height >= 350
       && /^(CC0|CC BY|CC BY-SA|Public domain)/i.test(image.license));
-    } catch (error: unknown) {
-      console.warn(`[Image Search] Query failed ("${item.query}"): ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  const batches = await Promise.all(queries.map(async (item) => {
+    try {
+      const openverseResults = await searchOpenverse(item);
+      if (openverseResults.length) return openverseResults;
+    } catch (error) {
+      console.warn(`[Image Search] Openverse failed ("${item.query}"): ${error instanceof Error ? error.message : String(error)}`);
+    }
+    try {
+      return await searchCommons(item);
+    } catch (error) {
+      console.warn(`[Image Search] Wikimedia fallback failed ("${item.query}"): ${error instanceof Error ? error.message : String(error)}`);
       return [];
     }
   }));
 
   if (batches.every((batch) => batch.length === 0)) {
-    throw new Error("Image search could not reach Wikimedia Commons or returned no usable licensed images. Check your internet connection, VPN/proxy, and try again.");
+    throw new Error("Free image search services are unavailable or returned no usable openly licensed images. Check your internet connection and try again.");
   }
 
   const unique = new Map<string, any>();
