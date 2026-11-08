@@ -38,7 +38,26 @@ jobs:
         run: npm version 1.0.${{ github.run_number }} --no-git-tag-version
 
       - name: Install Project Dependencies
-        run: npm install --no-audit --no-fund
+        run: npm install --no-audit --no-fund --ignore-scripts
+
+      - name: Download Electron Binary (with retry)
+        shell: pwsh
+        run: |
+          $maxAttempts = 6
+          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            Write-Host "Downloading Electron binary (attempt $attempt of $maxAttempts)..."
+            node node_modules/electron/install.js
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "Electron binary downloaded successfully."
+              break
+            }
+            if ($attempt -eq $maxAttempts) {
+              throw "Electron binary download failed after $maxAttempts attempts."
+            }
+            $delay = [Math]::Min(60, 10 * $attempt)
+            Write-Warning "Electron download failed (exit $LASTEXITCODE). Retrying in $delay seconds..."
+            Start-Sleep -Seconds $delay
+          }
 
       - name: Rebuild Native Dependencies
         run: npx electron-rebuild -f -w better-sqlite3
