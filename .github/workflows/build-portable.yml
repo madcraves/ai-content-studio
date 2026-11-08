@@ -40,23 +40,43 @@ jobs:
       - name: Install Project Dependencies
         run: npm install --no-audit --no-fund --ignore-scripts
 
-      - name: Download Electron Binary (with retry)
+      - name: Download Electron Binary (mirror fallback + retry)
         shell: pwsh
         run: |
-          $maxAttempts = 6
-          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
-            Write-Host "Downloading Electron binary (attempt $attempt of $maxAttempts)..."
-            node node_modules/electron/install.js
-            if ($LASTEXITCODE -eq 0) {
-              Write-Host "Electron binary downloaded successfully."
-              break
+          $mirrors = @(
+            "https://npmmirror.com/mirrors/electron/",
+            "https://github.com/electron/electron/releases/download/"
+          )
+          $maxAttempts = 3
+          $downloaded = $false
+
+          foreach ($mirror in $mirrors) {
+            $env:ELECTRON_MIRROR = $mirror
+            Write-Host "Trying Electron mirror: $mirror"
+
+            for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+              Write-Host "Download attempt $attempt of $maxAttempts..."
+              node node_modules/electron/install.js
+              if ($LASTEXITCODE -eq 0) {
+                Write-Host "Electron binary downloaded successfully from $mirror"
+                $downloaded = $true
+                break
+              }
+
+              if ($attempt -lt $maxAttempts) {
+                $delay = 15 * $attempt
+                Write-Warning "Download failed (exit $LASTEXITCODE). Retrying in $delay seconds..."
+                Start-Sleep -Seconds $delay
+              }
             }
-            if ($attempt -eq $maxAttempts) {
-              throw "Electron binary download failed after $maxAttempts attempts."
-            }
-            $delay = [Math]::Min(60, 10 * $attempt)
-            Write-Warning "Electron download failed (exit $LASTEXITCODE). Retrying in $delay seconds..."
-            Start-Sleep -Seconds $delay
+
+            if ($downloaded) { break }
+            Write-Warning "Mirror failed; trying the next source."
+          }
+
+          Remove-Item Env:ELECTRON_MIRROR -ErrorAction SilentlyContinue
+          if (-not $downloaded) {
+            throw "Electron binary download failed from all configured mirrors."
           }
 
       - name: Rebuild Native Dependencies
