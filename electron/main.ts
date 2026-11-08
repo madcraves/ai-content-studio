@@ -41,6 +41,48 @@ function sendUpdateStatus(status: typeof updateStatus) {
   win?.webContents.send("updates:status", updateStatus);
 }
 
+let updateCheckInFlight: Promise<any> | null = null;
+
+async function checkForUpdatesWithRetry(): Promise<any> {
+  if (!app.isPackaged) return { updateInfo: null };
+  if (updateCheckInFlight) return updateCheckInFlight;
+
+  updateCheckInFlight = (async () => {
+    const delays = [0, 2500, 6000];
+    let lastError: any;
+
+    for (let attempt = 0; attempt < delays.length; attempt++) {
+      if (delays[attempt] > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+      }
+
+      try {
+        return await autoUpdater.checkForUpdates();
+      } catch (error: any) {
+        lastError = error;
+        const message = String(error?.message || error || "");
+        const transient = /HTTP 5\\d\\d|status code 5\\d\\d|504|502|503|timed? ?out|ECONNRESET|ECONNREFUSED|ENOTFOUND|network/i.test(message);
+        if (!transient || attempt === delays.length - 1) break;
+        console.warn(`[Auto Update] Temporary GitHub/network error; retrying (${attempt + 1}/${delays.length - 1}): ${message}`);
+      }
+    }
+
+    const message = String(lastError?.message || "Update check failed.");
+    const isGatewayError = /504|502|503|HTTP 5\\d\\d|status code 5\\d\\d/i.test(message);
+    sendUpdateStatus({
+      status: "error",
+      message: isGatewayError
+        ? "GitHub is temporarily unavailable. Your app is safe to use. Please try Check for Updates again in a few minutes."
+        : message,
+    });
+    throw lastError;
+  })().finally(() => {
+    updateCheckInFlight = null;
+  });
+
+  return updateCheckInFlight;
+}
+
 function configureAutoUpdates() {
   if (!app.isPackaged) return;
   autoUpdater.autoDownload = true;
@@ -50,9 +92,14 @@ function configureAutoUpdates() {
   autoUpdater.on("update-not-available", (info) => sendUpdateStatus({ status: "latest", version: info.version, message: "You are using the latest version." }));
   autoUpdater.on("download-progress", (progress) => sendUpdateStatus({ status: "downloading", version: updateStatus.version, percent: Math.max(0, Math.min(100, progress.percent)), transferred: progress.transferred, total: progress.total, bytesPerSecond: progress.bytesPerSecond, message: `Downloading version ${updateStatus.version || "update"}…` }));
   autoUpdater.on("update-downloaded", (info) => sendUpdateStatus({ status: "downloaded", version: info.version, percent: 100, message: `Version ${info.version} is downloaded and ready to install.` }));
-  autoUpdater.on("error", (error) => sendUpdateStatus({ status: "error", message: error.message || "Update check failed." }));
-  setTimeout(() => void autoUpdater.checkForUpdates().catch((error) => sendUpdateStatus({ status: "error", message: error.message })), 8000);
-  setInterval(() => void autoUpdater.checkForUpdates().catch((error) => sendUpdateStatus({ status: "error", message: error.message })), 6 * 60 * 60 * 1000);
+  autoUpdater.on("error", (error) => {
+    const message = String(error?.message || "Update check failed.");
+    if (!/504|502|503|HTTP 5\\d\\d|status code 5\\d\\d/i.test(message)) {
+      sendUpdateStatus({ status: "error", message });
+    }
+  });
+  setTimeout(() => void checkForUpdatesWithRetry().catch(() => undefined), 8000);
+  setInterval(() => void checkForUpdatesWithRetry().catch(() => undefined), 6 * 60 * 60 * 1000);
 }
 
 const licenseFile = () =>
@@ -371,7 +418,11 @@ function createWindow(): void {
 ipcMain.handle("updates:status", () => updateStatus);
 ipcMain.handle("updates:check", async () => {
   if (!app.isPackaged) return { status: "development", message: "Updates are available in the installed version." };
-  await autoUpdater.checkForUpdates();
+  try {
+    await checkForUpdatesWithRetry();
+  } catch {
+    // The helper has already set a user-friendly update status.
+  }
   return updateStatus;
 });
 ipcMain.handle("updates:install", () => {
