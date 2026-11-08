@@ -61,14 +61,14 @@ async function checkForUpdatesWithRetry(): Promise<any> {
       } catch (error: any) {
         lastError = error;
         const message = String(error?.message || error || "");
-        const transient = /HTTP 5\\d\\d|status code 5\\d\\d|504|502|503|timed? ?out|ECONNRESET|ECONNREFUSED|ENOTFOUND|network/i.test(message);
+        const transient = /HTTP 5\d\d|status code 5\d\d|504|502|503|timed? ?out|ECONNRESET|ECONNREFUSED|ENOTFOUND|network/i.test(message);
         if (!transient || attempt === delays.length - 1) break;
         console.warn(`[Auto Update] Temporary GitHub/network error; retrying (${attempt + 1}/${delays.length - 1}): ${message}`);
       }
     }
 
     const message = String(lastError?.message || "Update check failed.");
-    const isGatewayError = /504|502|503|HTTP 5\\d\\d|status code 5\\d\\d/i.test(message);
+    const isGatewayError = /504|502|503|HTTP 5\d\d|status code 5\d\d/i.test(message);
     sendUpdateStatus({
       status: "error",
       message: isGatewayError
@@ -94,7 +94,7 @@ function configureAutoUpdates() {
   autoUpdater.on("update-downloaded", (info) => sendUpdateStatus({ status: "downloaded", version: info.version, percent: 100, message: `Version ${info.version} is downloaded and ready to install.` }));
   autoUpdater.on("error", (error) => {
     const message = String(error?.message || "Update check failed.");
-    if (!/504|502|503|HTTP 5\\d\\d|status code 5\\d\\d/i.test(message)) {
+    if (!/504|502|503|HTTP 5\d\d|status code 5\d\d/i.test(message)) {
       sendUpdateStatus({ status: "error", message });
     }
   });
