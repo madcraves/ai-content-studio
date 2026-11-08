@@ -79,8 +79,22 @@ jobs:
             throw "Electron binary download failed from all configured mirrors."
           }
 
+      - name: Setup Python for node-gyp
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          architecture: "x64"
+
       - name: Rebuild Native Dependencies
-        run: npx electron-rebuild -f -w better-sqlite3
+        shell: pwsh
+        run: |
+          $pythonPath = (python -c "import sys; print(sys.executable)").Trim()
+          Write-Host "Using Python for node-gyp: $pythonPath"
+          $env:npm_config_python = $pythonPath
+          npx electron-rebuild -f -w better-sqlite3
+          if ($LASTEXITCODE -ne 0) {
+            throw "better-sqlite3 rebuild failed with exit code $LASTEXITCODE"
+          }
 
       - name: Build React Application
         run: npm run build
