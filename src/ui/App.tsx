@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import "./styles.css";
 
 const studio = window.studio as any;
@@ -74,6 +74,10 @@ function App() {
   const [licenseClock, setLicenseClock] = useState(Date.now());
 
   const [licenseChecking, setLicenseChecking] = useState(true);
+  const [startupDataReady, setStartupDataReady] = useState(false);
+  const [startupDiagnostics, setStartupDiagnostics] = useState<any[]>([]);
+  const [showStartupDiagnostics, setShowStartupDiagnostics] = useState(false);
+  const startupCheckStarted = useRef(false);
   const [licenseStatus, setLicenseStatus] = useState<any>(null);
   const [machineId, setMachineId] = useState("");
   const [activationCode, setActivationCode] = useState("");
@@ -228,6 +232,7 @@ function App() {
 
         if (status?.activated) {
           await loadData(true);
+          setStartupDataReady(true);
         }
       } catch (err) {
         console.error("Initialization error:", err);
@@ -244,6 +249,51 @@ function App() {
       active = false;
     };
   }, []);
+
+
+  // Run real connectivity checks once per application launch, after saved settings load.
+  useEffect(() => {
+    if (!startupDataReady || !licenseStatus?.activated || startupCheckStarted.current) return;
+    startupCheckStarted.current = true;
+    let active = true;
+    async function runStartupDiagnostics() {
+      const checks: any[] = [];
+      try {
+        const network = await studio.getConnectionStatus();
+        checks.push({ kind: "network", id: "network", name: "Internet connection", ok: Boolean(network?.online), detail: network?.online ? "Internet connection available." : "No internet connection detected." });
+      } catch (error: any) {
+        checks.push({ kind: "network", id: "network", name: "Internet connection", ok: false, detail: error?.message || "Unable to check internet connection." });
+      }
+      const providerChecks = await Promise.all((providers || []).filter((item: any) => item.enabled !== false).map(async (provider: any) => {
+        if (!provider.configured) return { kind: "provider", id: String(provider.id), name: provider.name, ok: false, detail: "API key is not configured." };
+        try {
+          const result = await studio.testProvider(String(provider.id));
+          const ok = Boolean(result?.ok || result?.success);
+          return { kind: "provider", id: String(provider.id), name: provider.name, ok, detail: ok ? (result?.message || "Connected.") : (result?.message || "Connection test failed.") };
+        } catch (error: any) {
+          return { kind: "provider", id: String(provider.id), name: provider.name, ok: false, detail: error?.message || "Connection test failed." };
+        }
+      }));
+      checks.push(...providerChecks);
+      const siteChecks = await Promise.all((sites || []).map(async (site: any) => {
+        try {
+          const result = await studio.testSite(site.id);
+          const ok = Boolean(result?.ok || result?.success);
+          return { kind: "site", id: String(site.id), name: site.name || site.url, ok, detail: ok ? (result?.message || "Connected.") : (result?.message || "WordPress connection failed.") };
+        } catch (error: any) {
+          return { kind: "site", id: String(site.id), name: site.name || site.url, ok: false, detail: error?.message || "WordPress connection failed." };
+        }
+      }));
+      checks.push(...siteChecks);
+      if (!active) return;
+      setStartupDiagnostics(checks);
+      setProviderStatus((current) => ({ ...current, ...Object.fromEntries(providerChecks.map((item: any) => [item.id, item.ok ? "Connected" : "Failed"])) }));
+      setSiteStatus((current) => ({ ...current, ...Object.fromEntries(siteChecks.map((item: any) => [item.id, item.ok ? "Connected" : "Failed"])) }));
+      if (checks.some((item: any) => !item.ok)) setShowStartupDiagnostics(true);
+    }
+    void runStartupDiagnostics();
+    return () => { active = false; };
+  }, [startupDataReady, licenseStatus, providers, sites]);
 
   useEffect(() => {
     if (page === "Article Library" && imageSectionFocus) {
@@ -298,6 +348,7 @@ function App() {
       setActivationCode("");
 
       await loadData(true);
+      setStartupDataReady(true);
 
       setPage("Dashboard");
       notify("License activated successfully.");
@@ -1908,6 +1959,28 @@ function App() {
           )}
         </div>
 
+
+        {showStartupDiagnostics && (
+          <div className="article-preview-modal startup-diagnostics-overlay" role="dialog" aria-modal="true" aria-label="Startup connection check">
+            <section className="article-preview-modal-card startup-diagnostics-card">
+              <div className="panel-heading">
+                <div><span className="eyebrow-light">MADCRAVES SYSTEM CHECK</span><h3>Connection problems detected</h3><p>AI Content Studio checked your saved AI providers and WordPress websites. You can continue using the app.</p></div>
+              </div>
+              <div className="startup-diagnostics-list">
+                {startupDiagnostics.filter((item: any) => !item.ok).map((item: any) => (
+                  <div className="list-row startup-diagnostic-row" key={item.kind + ":" + item.id}>
+                    <div><strong>{item.name}</strong><small>{item.kind === "provider" ? "AI Provider" : item.kind === "site" ? "WordPress website" : "Network"} · {item.detail}</small></div>
+                    <span className="status-badge danger">Not connected</span>
+                  </div>
+                ))}
+              </div>
+              <div className="button-row publish-modal-actions">
+                <button type="button" className="secondary-button" onClick={() => setShowStartupDiagnostics(false)}>Cancel</button>
+                <button type="button" className="primary-button" onClick={() => { const first = startupDiagnostics.find((item: any) => !item.ok); setPage(first?.kind === "site" ? "Websites" : "AI Providers"); setShowStartupDiagnostics(false); }}>Configure manually</button>
+              </div>
+            </section>
+          </div>
+        )}
         {publishingTargetArticle && (
           <div className="article-preview-modal wordpress-publish-modal" role="dialog" aria-modal="true" aria-label="Choose WordPress website" onMouseDown={(event) => { if (event.target === event.currentTarget && !publishingArticle) { setPublishingTargetArticle(null); setPublishingSiteId(""); } }}>
             <section className="wordpress-publish-card">
