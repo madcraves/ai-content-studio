@@ -46,7 +46,8 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
-      "package.json"
+      "package.json",
+      "assets/**/*"
     ],
     "win": {
       "target": [
@@ -57,7 +58,8 @@
           ]
         }
       ],
-      "artifactName": "AI-Content-Studio-Setup-${version}-x64.${ext}"
+      "artifactName": "AI-Content-Studio-Setup-${version}-x64.${ext}",
+      "icon": "assets/madcraves.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -65,7 +67,10 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "AI Content Studio"
+      "shortcutName": "AI Content Studio",
+      "installerIcon": "assets/madcraves.ico",
+      "uninstallerIcon": "assets/madcraves.ico",
+      "installerHeaderIcon": "assets/madcraves.ico"
     },
     "asar": true,
     "asarUnpack": [
