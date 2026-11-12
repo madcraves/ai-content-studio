@@ -390,6 +390,7 @@ function createWindow(): void {
     minWidth: 1100,
     minHeight: 720,
     title: "MadCraves AI Content Studio",
+    icon: path.join(__dirname, "../assets/madcraves.ico"),
 
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
