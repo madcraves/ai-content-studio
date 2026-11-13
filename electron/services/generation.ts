@@ -23,6 +23,8 @@ interface GeneratedArticle {
   slug: string;
   metaTitle: string;
   metaDescription: string;
+  focusKeyword: string;
+  secondaryKeywords: string[];
   keywords: string[];
   provider: string;
   model: string;
@@ -66,7 +68,9 @@ ARTICLE BRIEF:
 
 Topic: ${input.topic}
 
-Primary SEO Keyword: ${input.keyword}
+Primary SEO Keyword (use exactly as supplied): ${input.keyword}
+
+Generate exactly FOUR distinct secondary SEO keywords/phrases. Choose semantically related terms and long-tail variations that match the same search intent. Do not repeat the primary keyword, use near-duplicates, or stuff keywords. Use them naturally where relevant; never force them into headings or paragraphs.
 
 Target Word Count: ${wordCount}
 
@@ -100,8 +104,8 @@ RESEARCH, TRUST & SUBSTANCE:
 
 SEO & WORDPRESS QUALITY:
 
-18. Prioritize readers first. Integrate the primary keyword naturally in the title, opening, a relevant heading and body where appropriate; never force exact-match repetition.
-19. Use relevant secondary, semantic and long-tail terms naturally. Return at least five genuinely relevant keywords total, including the primary keyword.
+18. Prioritize readers first. Integrate the exact primary keyword naturally in the title, opening, a relevant heading and body where appropriate; never force exact-match repetition.
+19. Return exactly ONE primary keyword (identical to the supplied primary keyword) and exactly FOUR distinct secondary SEO keywords. Secondary terms must be genuinely relevant semantic or long-tail phrases, not synonyms repeated with trivial wording changes. Use them naturally only where they fit the reader intent.
 20. Structure the article with one clear H1 followed by logical H2/H3 sections. Do not skip heading levels without reason. Keep paragraphs readable and use lists or tables only when they improve comprehension.
 21. Write a compelling excerpt and accurate SEO meta title and description that reflect the actual article. Create a concise, readable, lowercase URL slug.
 22. Target approximately the requested word count with meaningful substance. Do not hit the count by repeating points, inflating sentences or adding irrelevant sections.
@@ -128,13 +132,14 @@ RETURN THIS JSON STRUCTURE:
   "slug": "clear-topic-specific-url-slug",
   "metaTitle": "Accurate, compelling SEO title",
   "metaDescription": "Useful, natural search description that accurately reflects the article",
-  "keywords": [
-    "Primary keyword",
+  "primaryKeyword": "${input.keyword}",
+  "secondaryKeywords": [
     "Relevant secondary keyword 1",
     "Relevant secondary keyword 2",
     "Relevant secondary keyword 3",
     "Relevant secondary keyword 4"
-  ]
+  ],
+  "keywords": ["${input.keyword}", "Relevant secondary keyword 1", "Relevant secondary keyword 2", "Relevant secondary keyword 3", "Relevant secondary keyword 4"]
 }
 
 IMPORTANT: Return only one complete, valid JSON object. The article itself must be original, specific, reader-first and ready for a professional website after human review.
@@ -222,7 +227,8 @@ function extractJSON(text: string): any {
 
 function parseArticle(
   raw: any,
-  provider: AIProvider
+  provider: AIProvider,
+  input: GenerationInput
 ): GeneratedArticle {
   if (!raw || typeof raw !== "object") {
     throw new Error("Invalid article response.");
@@ -244,11 +250,24 @@ function parseArticle(
     );
   }
 
-  const keywords = Array.isArray(raw.keywords)
-    ? raw.keywords
-        .map((item: any) => String(item).trim())
-        .filter(Boolean)
-    : [];
+  const focusKeyword = String(input.keyword || raw.primaryKeyword || raw.focusKeyword || "").trim();
+  const suppliedSecondary = Array.isArray(raw.secondaryKeywords)
+    ? raw.secondaryKeywords
+    : Array.isArray(raw.keywords)
+      ? raw.keywords.filter((item: any) => String(item).trim().toLowerCase() !== focusKeyword.toLowerCase())
+      : [];
+  const secondaryKeywords = suppliedSecondary
+    .map((item: any) => String(item).trim())
+    .filter((item: string, index: number, all: string[]) =>
+      Boolean(item) && item.toLowerCase() !== focusKeyword.toLowerCase() &&
+      all.findIndex((value) => value.toLowerCase() === item.toLowerCase()) === index
+    )
+    .slice(0, 4);
+  if (!focusKeyword) throw new Error("Generated SEO package is missing its primary keyword.");
+  if (secondaryKeywords.length !== 4) {
+    throw new Error("AI must return exactly four distinct secondary SEO keywords. Please regenerate the article.");
+  }
+  const keywords = [focusKeyword, ...secondaryKeywords];
 
   return {
     title,
@@ -273,6 +292,8 @@ function parseArticle(
       ""
     ).trim(),
 
+    focusKeyword,
+    secondaryKeywords,
     keywords,
 
     provider: getProviderId(provider),
@@ -511,7 +532,7 @@ async function callAI(
 
   const parsed = extractJSON(responseText);
 
-  return parseArticle(parsed, provider);
+  return parseArticle(parsed, provider, input);
 }
 
 // Detect provider quota exhaustion and throttling so backup agents can take over.
