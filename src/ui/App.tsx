@@ -1344,7 +1344,7 @@ function App() {
 
               {generatedArticle && (
                 <section className="panel generation-success-panel">
-                  <div><span className="connected">Article generated and saved</span><h3>{generatedArticle.title || "Your article is ready"}</h3><p>Your content is available in Article Library. You can review, edit, publish or find article-related images from there.</p></div>
+                  <div><span className="connected">Article generated and saved</span><h3>{generatedArticle.title || "Your article is ready"}</h3><p>Your content is available in Article Library. You can review, edit, publish or find article-related images from there.</p><div className="generated-seo-summary"><strong>Primary keyword:</strong> {generatedArticle.focus_keyword || generatedArticle.focusKeyword || keyword}<br/><strong>Secondary keywords:</strong> {String(generatedArticle.keywords || "").split(",").map((item: string) => item.trim()).filter((item: string) => item && item !== (generatedArticle.focus_keyword || generatedArticle.focusKeyword || keyword)).join(" · ")}<br/><strong>Meta title:</strong> {generatedArticle.meta_title || generatedArticle.metaTitle || "Not provided"}<br/><strong>Meta description:</strong> {generatedArticle.meta_description || generatedArticle.metaDescription || "Not provided"}</div></div>
                   <button type="button" className="primary-button" onClick={() => setPage("Article Library")}>Open Article Library →</button>
                 </section>
               )}
@@ -1457,6 +1457,29 @@ function App() {
                       }
                     />
                   </div>
+
+                  <section className="seo-metadata-editor">
+                    <div className="panel-heading"><div><h3>SEO Metadata</h3><p>Review these fields before sending the article to WordPress.</p></div></div>
+                    <div className="form-group">
+                      <label>Primary SEO Keyword</label>
+                      <input value={editingArticle.focus_keyword || editingArticle.focusKeyword || ""} onChange={(event) => setEditingArticle({ ...editingArticle, focus_keyword: event.target.value, focusKeyword: event.target.value })} />
+                    </div>
+                    <div className="form-group">
+                      <label>Secondary SEO Keywords (4)</label>
+                      <textarea rows={3} value={Array.isArray(editingArticle.keywords) ? editingArticle.keywords.filter((item: string) => item !== (editingArticle.focus_keyword || editingArticle.focusKeyword)).join(", ") : String(editingArticle.keywords || "").split(",").map((item: string) => item.trim()).filter((item: string) => item && item !== (editingArticle.focus_keyword || editingArticle.focusKeyword)).join(", ")} onChange={(event) => { const secondary = event.target.value.split(",").map((item: string) => item.trim()).filter(Boolean).slice(0, 4); const primary = editingArticle.focus_keyword || editingArticle.focusKeyword || ""; setEditingArticle({ ...editingArticle, keywords: [primary, ...secondary].filter(Boolean) }); }} placeholder="Keyword 1, Keyword 2, Keyword 3, Keyword 4" />
+                      <small>Enter four comma-separated secondary keywords.</small>
+                    </div>
+                    <div className="form-group">
+                      <label>Meta Title</label>
+                      <input maxLength={70} value={editingArticle.meta_title || editingArticle.metaTitle || ""} onChange={(event) => setEditingArticle({ ...editingArticle, meta_title: event.target.value, metaTitle: event.target.value })} />
+                      <small>{String(editingArticle.meta_title || editingArticle.metaTitle || "").length}/70 characters</small>
+                    </div>
+                    <div className="form-group">
+                      <label>Meta Description</label>
+                      <textarea rows={3} maxLength={170} value={editingArticle.meta_description || editingArticle.metaDescription || ""} onChange={(event) => setEditingArticle({ ...editingArticle, meta_description: event.target.value, metaDescription: event.target.value })} />
+                      <small>{String(editingArticle.meta_description || editingArticle.metaDescription || "").length}/170 characters</small>
+                    </div>
+                  </section>
 
                   <div className="button-row">
                     <button
