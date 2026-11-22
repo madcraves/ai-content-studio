@@ -399,3 +399,9 @@ button:disabled{cursor:not-allowed;opacity:.58}
 .seo-metadata-editor .panel-heading p,.seo-metadata-editor small{color:var(--muted);font-size:11px}
 .generated-seo-summary{margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:9px;font-size:12px;line-height:1.9;overflow-wrap:anywhere}
 .generated-seo-summary strong{color:var(--text)}
+
+.seo-workspace{max-width:980px;margin:0 auto}
+.seo-workspace-card{display:flex;flex-direction:column;gap:18px}
+.seo-current-details{padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);overflow-wrap:anywhere}
+.seo-current-details p{margin:8px 0;font-size:12px;line-height:1.6}
+.seo-workspace-note{font-size:12px;color:var(--muted)}
