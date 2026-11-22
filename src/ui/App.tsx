@@ -7,6 +7,7 @@ type Page =
   | "Dashboard"
   | "AI Article Generator"
   | "Article Library"
+  | "SEO"
   | "Content Scheduler"
   | "Websites"
   | "AI Providers";
