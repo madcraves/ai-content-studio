@@ -43,6 +43,7 @@ const NAVIGATION: Page[] = [
   "Dashboard",
   "AI Article Generator",
   "Article Library",
+  "SEO",
   "Content Scheduler",
   "Websites",
   "AI Providers",
@@ -89,6 +90,10 @@ function App() {
   const [articles, setArticles] = useState<any[]>([]);
   const [deletingArticleId, setDeletingArticleId] = useState<number | null>(null);
   const [selectedArticleProvider, setSelectedArticleProvider] = useState("all");
+  const [seoArticleId, setSeoArticleId] = useState("");
+  const [seoProviderId, setSeoProviderId] = useState("gemini");
+  const [seoLoading, setSeoLoading] = useState(false);
+
   const [imageLoading, setImageLoading] = useState(false);
   const [imageResults, setImageResults] = useState<any[]>([]);
   const [imageSearchQueries, setImageSearchQueries] = useState<string[]>([]);
@@ -1043,6 +1048,7 @@ function App() {
               {item === "Dashboard" && "▦"}
               {item === "AI Article Generator" && "✦"}
               {item === "Article Library" && "▤"}
+              {item === "SEO" && "✧"}
               {item === "Content Scheduler" && "◷"}
               {item === "Websites" && "◎"}
               {item === "AI Providers" && "◇"}
@@ -1666,6 +1672,33 @@ function App() {
                 </div>
               </section>
             </>
+          )}
+
+          {/* SEO WORKSPACE */}
+          {page === "SEO" && (
+            <section className="seo-workspace">
+              <div className="section-toolbar">
+                <div><span className="eyebrow-light">ARTICLE OPTIMIZATION</span><h3>SEO Optimization</h3><p>Select a saved article and generate a focused SEO package without rewriting its body.</p></div>
+              </div>
+              <section className="panel seo-workspace-card">
+                <div className="form-group">
+                  <label>Select Article</label>
+                  <select value={seoArticleId} onChange={(event) => setSeoArticleId(event.target.value)}>
+                    <option value="">-- Choose an article --</option>
+                    {articles.map((article:any) => <option key={article.id} value={String(article.id)}>{article.title || "Untitled"} · #{article.id}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>AI Provider</label>
+                  <select value={seoProviderId} onChange={(event) => setSeoProviderId(event.target.value)}>
+                    {providers.filter((p:any)=>p.enabled!==false).map((provider:any)=><option key={provider.id} value={provider.id}>{provider.name || provider.id}</option>)}
+                  </select>
+                </div>
+                {articles.find((item:any)=>String(item.id)===seoArticleId) && (()=>{const selected=articles.find((item:any)=>String(item.id)===seoArticleId);return <div className="seo-current-details"><strong>Current SEO</strong><p>Primary keyword: {selected.focus_keyword || "—"}</p><p>Meta title: {selected.meta_title || "—"}</p><p>Meta description: {selected.meta_description || "—"}</p><p>Keywords: {selected.keywords || "—"}</p></div>})()}
+                <button className="primary-button" type="button" disabled={!seoArticleId || seoLoading || !seoProviderId} onClick={async()=>{const selected=articles.find((item:any)=>String(item.id)===seoArticleId);if(!selected)return;clearNotifications();setSeoLoading(true);try{const result=await studio.aiEditArticle({articleId:Number(selected.id),providerId:seoProviderId,instructions:"SEO OPTIMIZATION TASK ONLY. Do not rewrite, modify, shorten, expand, reorder, or otherwise change the article body, its title, or its excerpt. Return the existing article content unchanged. Create an SEO package for this saved article: exactly ONE primary SEO keyword that best matches the article and search intent, exactly FOUR distinct secondary keywords (semantic or long-tail, not duplicates), an accurate click-worthy meta title preferably 50-60 characters and not exceeding 70, and a compelling meta description ideally 140-160 characters and not exceeding 170. Ensure keywords are relevant and natural, avoid keyword stuffing and unsupported claims. Preserve the existing focus keyword only if it is clearly the best primary target; otherwise improve it. Return updated SEO fields only and preserve the article's content unchanged."});if(result?.ok===false)throw new Error(result.message||"SEO optimization failed.");await loadData(true);notify("SEO package generated and saved for selected article.");}catch(err:any){notify(err?.message||"SEO optimization failed.",true);}finally{setSeoLoading(false);}}}>{seoLoading?"Optimizing SEO…":"✦ Optimize SEO"}</button>
+                <p className="seo-workspace-note">AI will generate 1 primary keyword, 4 secondary keywords, a meta title and a meta description, while preserving the article content.</p>
+              </section>
+            </section>
           )}
 
           {/* CONTENT SCHEDULER */}
